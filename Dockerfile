@@ -7,6 +7,7 @@ COPY --chown=node:node package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --chown=node:node src ./src
 COPY --chown=node:node public ./public
+COPY --chown=node:node scripts/admin.ts ./scripts/admin.ts
 
 # The only writable place: the volume for the database and its backups. The process runs as the unprivileged "node" user.
 RUN mkdir -p /data && chown node:node /data && chmod 700 /data

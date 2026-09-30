@@ -5,6 +5,8 @@ import { tx, type DB } from './db-core.ts';
 import { GameError } from './errors.ts';
 import type { Rng } from './rng.ts';
 import * as auth from './game/auth.ts';
+import * as admin from './game/admin.ts';
+import { applyPreset, applySettings, describeSettings, PRESETS, resetAllSettings, resetSetting, setSetting } from './settings.ts';
 import { LoginGuard } from './game/lockout.ts';
 import { cleanBody, pageNumber } from './game/validate.ts';
 import * as acc from './game/accomplishments.ts';
@@ -32,14 +34,19 @@ export interface Deps {
   registrationCode?: string;
   /** stable identifier of the caller for anonymous features (victim link); on a server this must come from the connection, never from a request header */
   clientKey?: (c: Context) => string;
+  /** single player (the browser-only build): the one human is always an admin. Multiplayer: only players with the is_admin flag. */
+  singlePlayer?: boolean;
+  /** called after the admin wiped the world (the server creates fresh bots) */
+  onWipe?: () => void;
 }
 
 /** The whole game API as a Web-standard Hono app: it runs on Node, in a Web Worker in the browser, or anywhere else. */
-export function createApi({ db, now, rng, devClock, assets, middleware = [], globalMiddleware = [], registrationCode, clientKey }: Deps) {
+export function createApi({ db, now, rng, devClock, assets, middleware = [], globalMiddleware = [], registrationCode, clientKey, singlePlayer = false, onWipe }: Deps) {
   const app = new Hono();
   for (const mw of globalMiddleware) app.use('*', mw); // (middleware only wraps routes that are registered AFTER it)
   for (const mw of middleware) app.use('/api/*', mw);
   const guard = new LoginGuard();
+  applySettings(db); // the world's tuned numbers (admin page) are active from the first request
 
   app.onError((e, c) => {
     if (e instanceof GameError) return c.json({ error: e.code, message: e.message }, e.status as 400);
@@ -101,7 +108,7 @@ export function createApi({ db, now, rng, devClock, assets, middleware = [], glo
       const t = now(); const p = loadPlayer(db, id, t);
       const { pass_hash: _, ...pub } = p;
       return {
-        ...pub, hp: Math.floor(p.hp), serverNow: t, xpToNext: CFG.xpToNext(p.level),
+        ...pub, isAdmin: admin.isAdmin(db, id, singlePlayer), hp: Math.floor(p.hp), serverNow: t, xpToNext: CFG.xpToNext(p.level),
         attackReadyAt: p.last_attack_at + CFG.attackCooldown,
         found: p.found_target && t - p.found_at <= CFG.searchValidity
           ? db.prepare('SELECT id, name, level, race FROM players WHERE id = ?').get(p.found_target) : null,
@@ -255,6 +262,44 @@ export function createApi({ db, now, rng, devClock, assets, middleware = [], glo
   app.get('/api/mail/:id', (c) => { const id = me(c); return c.json(tx(db, () => mail.readMail(db, id, Number(c.req.param('id')), now()))); });
   app.post('/api/mail/send', act((id, b) => mail.sendMail(db, id, b.to, b.subject, b.body, now())));
   app.post('/api/mail/delete', act((id, b) => mail.deleteMail(db, id, b.mailId)));
+
+  // ---- admin (single player: always; multiplayer: players with the is_admin flag, which is set by hand in the database) ----
+  const adminId = (c: Context) => {
+    const id = me(c);
+    if (!admin.isAdmin(db, id, singlePlayer)) throw new GameError('forbidden', 'Administrators only', 403);
+    return id;
+  };
+  const adminAct = <T>(fn: (id: number, b: Record<string, any>) => T) => async (c: Context) => {
+    const id = adminId(c); const b = await body(c);
+    return c.json(tx(db, () => fn(id, b)) ?? { ok: true });
+  };
+  /** dangerous actions need the admin's password again on a public server (a stolen login token alone must not be enough) */
+  const sure = (id: number, b: Record<string, any>) => { if (!singlePlayer) auth.confirmPassword(db, id, b.password); };
+  const settingsView = () => ({ singlePlayer, settings: describeSettings(db), presets: Object.entries(PRESETS).map(([key, p]) => ({ key, label: p.label, description: p.description })),
+    world: admin.overview(db, now()), playerFields: admin.PLAYER_FIELDS });
+  app.get('/api/admin', (c) => { adminId(c); return c.json(tx(db, settingsView)); });
+  app.post('/api/admin/setting', adminAct((id, b) => { const r = setSetting(db, b.key, b.value); admin.log(db, id, 'setting', `${r.key} = ${r.value}`, now()); return r; }));
+  app.post('/api/admin/setting/reset', adminAct((id, b) => { resetSetting(db, b.key); admin.log(db, id, 'setting.reset', String(b.key), now()); }));
+  app.post('/api/admin/settings/reset', adminAct((id) => { resetAllSettings(db); admin.log(db, id, 'settings.reset', 'all settings back to the defaults', now()); }));
+  app.post('/api/admin/preset', adminAct((id, b) => { const label = applyPreset(db, b.name); admin.log(db, id, 'preset', label, now()); return { preset: label }; }));
+  app.post('/api/admin/announce', adminAct((id, b) => admin.announce(db, id, b.subject, b.body, now())));
+  app.get('/api/admin/players', (c) => { adminId(c); return c.json(admin.listPlayers(db, { q: c.req.query('q'), who: c.req.query('who'), page: Math.max(1, pageNumber(c.req.query('page'))) })); });
+  app.get('/api/admin/player/:id', (c) => { adminId(c); return c.json(admin.playerDetail(db, Number(c.req.param('id')))); });
+  app.post('/api/admin/player', adminAct((id, b) => { if (b.field === 'is_admin') sure(id, b); admin.setPlayerField(db, id, b.id, b.field, b.value, singlePlayer, now()); }));
+  app.post('/api/admin/player/give', adminAct((id, b) => admin.giveItem(db, id, b.id, b.key, now())));
+  app.post('/api/admin/player/release', adminAct((id, b) => admin.release(db, id, b.id, now())));
+  app.post('/api/admin/player/password', adminAct((id, b) => {
+    sure(id, b); auth.adminSetPassword(db, b.id, b.newPassword);
+    admin.log(db, id, 'player.password', `new password for player ${Number(b.id)}`, now());
+  }));
+  app.post('/api/admin/player/delete', adminAct((id, b) => { sure(id, b); admin.deletePlayer(db, id, b.id, now()); }));
+  app.post('/api/admin/wipe', async (c) => {
+    const id = adminId(c); const b = await body(c);
+    if (b.confirm !== 'WIPE') throw new GameError('not_confirmed', 'Type WIPE to confirm', 400);
+    const r = tx(db, () => { sure(id, b); return admin.wipeWorld(db, id, b.mode, now()); });
+    onWipe?.();
+    return c.json(r);
+  });
 
   // ---- dev tools (testing only) ----
   if (devClock) {

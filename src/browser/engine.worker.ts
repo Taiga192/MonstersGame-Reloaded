@@ -40,7 +40,7 @@ async function openDatabase() {
 
 function startGame() {
   if (settings.bots > 0) ensureBots(db, settings.bots, now(), Math.random); // new worlds start with bots at level 1
-  app = createApi({ db, now, rng: Math.random, devClock, assets: () => assets });
+  app = createApi({ db, now, rng: Math.random, devClock, assets: () => assets, singlePlayer: true, onWipe: () => { if (settings.bots > 0) ensureBots(db, settings.bots, now(), Math.random); } });
   for (const t of timers.splice(0)) clearInterval(t);
   // same rhythm as the Node server: bots play every 20 s, the arena checks its schedule every 30 s (only while the game is open)
   timers.push(setInterval(() => { try { if (settings.bots > 0) tickBots(db, now(), Math.random, { humans: settings.botsRaidHumans, humanRaidChance: settings.humanRaidChance }); } catch (e) { console.error('[bots]', e); } }, 20_000));

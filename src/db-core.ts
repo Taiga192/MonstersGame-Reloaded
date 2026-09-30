@@ -148,6 +148,11 @@ CREATE TABLE IF NOT EXISTS forum_threads (
 CREATE TABLE IF NOT EXISTS forum_posts (id INTEGER PRIMARY KEY, thread_id INTEGER NOT NULL, author_id INTEGER NOT NULL, body TEXT NOT NULL, created_at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS forum_posts_thread ON forum_posts(thread_id, id);
 
+-- admin page: tuned numbers (only the ones that differ from config.ts), world facts, and an audit trail of what admins did
+CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS admin_log (id INTEGER PRIMARY KEY, at INTEGER NOT NULL, admin_id INTEGER, admin_name TEXT NOT NULL, action TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '');
+
 CREATE TABLE IF NOT EXISTS bites (link_player INTEGER NOT NULL, visitor TEXT NOT NULL, day INTEGER NOT NULL, PRIMARY KEY (link_player, visitor, day));
 `;
 
@@ -193,5 +198,6 @@ function migrate(db: DB) {
   add('inventory', 'hardening', 'INTEGER NOT NULL DEFAULT 0');
   add('clans', 'is_open', 'INTEGER NOT NULL DEFAULT 1');
   add('players', 'is_bot', 'INTEGER NOT NULL DEFAULT 0');
+  add('players', 'is_admin', 'INTEGER NOT NULL DEFAULT 0'); // multiplayer: set by hand (scripts/admin.ts); single player: everyone is admin anyway
   db.exec('DELETE FROM sessions WHERE length(token) != 64'); // sessions used to store the token itself (48 hex); now only its SHA-256 (64 hex)
 }

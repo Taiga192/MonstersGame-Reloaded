@@ -26,7 +26,8 @@ const security = {
     authGlobal: { windowMs: 60_000, max: num(process.env.RATE_AUTH_GLOBAL_PER_MIN, 120) },
   },
 };
-const app = createApp({ db, now, rng: Math.random, devClock, security });
+// (after an admin wipe the bots are gone: start fresh ones. BOTS is declared below; the callback only runs later)
+const app = createApp({ db, now, rng: Math.random, devClock, security, onWipe: () => { if (BOTS > 0) ensureBots(db, BOTS, now(), Math.random); } });
 const port = Number(process.env.PORT ?? 3000);
 
 // ---- automated players (BOTS=0 disables) ----

@@ -158,7 +158,7 @@ function resolveHunt(db: DB, p: Player, portions: number, rng: Rng) {
     let roll = rng();
     const place = CFG.huntPlaces.find((pl) => (roll -= pl.chance) < 0) ?? CFG.huntPlaces[0];
     const mult = (1 + place.bonus) * rewardMult;
-    const g = Math.round(randInt(rng, CFG.huntVillage.gold[0], CFG.huntVillage.gold[1]) * mult * CFG.huntGoldLevelScale(p.level));
+    const g = Math.round(randInt(rng, CFG.huntVillage.gold[0], CFG.huntVillage.gold[1]) * mult * CFG.huntGoldLevelScale(p.level) * CFG.rateGold);
     const x = Math.round(CFG.huntVillage.xp * mult);
     events.push({ place: place.key, xp: x, gold: g, failed: false });
     if (place.key === 'large_town') largeTowns++;
@@ -173,7 +173,7 @@ function finishHunt(db: DB, id: number, p: Player, portions: number, now: number
   const r = resolveHunt(db, p, portions, rng);
   db.prepare('UPDATE players SET gold = gold + ?, hunt_started = NULL, hunt_until = NULL, hunt_portions = NULL WHERE id = ?').run(r.gold, id);
   const lv = awardXp(db, id, r.xp, now);
-  return { ...r, levelsGained: lv.levelsGained };
+  return { ...r, xp: lv.xpGained, levelsGained: lv.levelsGained };
 }
 
 export function collectHunt(db: DB, id: number, now: number, rng: Rng) {
@@ -202,7 +202,7 @@ export function bite(db: DB, linkOwnerId: number, visitorKey: string, now: numbe
   assert(today < CFG.biteDailyCap, 'bite_limit', 'This victim has been bitten enough for today', 429); // a hard ceiling, whoever the visitors are
   const r = db.prepare('INSERT OR IGNORE INTO bites (link_player, visitor, day) VALUES (?,?,?)').run(linkOwnerId, String(visitorKey).slice(0, 64), day);
   assert(Number(r.changes) > 0, 'already_bitten', 'You already bit this victim today');
-  const amount = randInt(rng, CFG.biteGoldMin, CFG.biteGoldMax);
+  const amount = Math.max(1, Math.round(randInt(rng, CFG.biteGoldMin, CFG.biteGoldMax) * CFG.rateGold));
   db.prepare('UPDATE players SET gold = gold + ? WHERE id = ?').run(amount, linkOwnerId);
   bump(db, linkOwnerId, 'bites_received');
   return { amount };

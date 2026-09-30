@@ -9,6 +9,10 @@ export const HOUR = 60 * MIN;
 export const DAY_MS = 24 * HOUR;
 
 export const CFG = {
+  // ---- world rates (admin page): 1 = normal. Applied to every source of XP / PvE gold, so a "speed server" is one number ----
+  rateXp: 1,
+  rateGold: 1, // hunting, graveyard work, relic dealer, victim link (NOT gold taken from other players)
+  rateLevelXp: 1, // scales the XP needed per level (below 1 = levels come faster)
   sessionMaxAge: 90 * 24 * 60 * 60 * 1000, // a login token stops working after 90 days
   passwordMin: 8,
   passwordMax: 128,
@@ -38,7 +42,7 @@ export const CFG = {
   stealMax: 0.1,
 
   // xp needed to advance from level L to L+1 [ASSUMED]
-  xpToNext: (level: number) => 5 * level,
+  xpToNext: (level: number): number => Math.max(1, Math.round(5 * level * CFG.rateLevelXp)),
   levelUpGold: (level: number) => level * 10, // [ASSUMED]
   levelUpMaxHp: 5, // [ASSUMED]
   levelUpHeal: 20, // "absorb some of enemy's health" [ASSUMED]
@@ -74,7 +78,7 @@ export const CFG = {
   ancestralFee: (wins: number) => 50 * (wins + 1) ** 2, // [ASSUMED] escalating
 
   workMaxHours: 48, // one shift, so players can go away for real life
-  workWagePerHour: (level: number) => 5 + level * 2, // [ASSUMED]
+  workWagePerHour: (level: number): number => (5 + level * 2) * CFG.rateGold, // [ASSUMED]
 
   hideoutMax: { surroundings: 7, path: 10, wall: 12, building: 23 } as Record<string, number>,
   hideoutCost: (comp: string, nextLevel: number) => { // [ASSUMED]

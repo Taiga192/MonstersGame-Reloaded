@@ -68,5 +68,8 @@ NEW, not in the original game. An endless ladder; see README. Rules: dungeon HP 
 ## Premium / Blood Crystals
 Removed in this replica by design (no premium accounts, no crystals).
 
+## World settings (admin page, not in the original game)
+Every rate and cooldown is a runtime setting (`src/settings.ts`). The XP multiplier applies to all XP, the gold multiplier to hunting, graveyard wages, the relic dealer and victim-link bites (never to gold taken from other players). Wipes reset characters to the start values and delete all other game data.
+
 ## Build status
 See README milestones.

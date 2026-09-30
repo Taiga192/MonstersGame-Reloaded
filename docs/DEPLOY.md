@@ -93,6 +93,13 @@ Character data lives on the server, so **clearing browser data only logs you out
 | `BACKUP_DIR` / `BACKUP_EVERY_HOURS` / `BACKUP_KEEP` | `<db folder>/backups` / 6 / 28 | automatic snapshots (0 hours = off) |
 | `NODE_ENV` | | set `production`: switches the cheat/test tools off |
 
+## 4b. Admin access
+After registering your own character on the server, make yourself admin (the flag can only be set on the server itself):
+```bash
+docker compose exec game node scripts/admin.ts /data/monsters.db grant YourName
+```
+Log out and in (or reload); an **Admin** menu appears. See the README for what it can do (rates, cooldowns, presets such as a speed server, wipes). Before a wipe make sure a fresh backup exists (automatic ones are in `/data/backups`, see section 5).
+
 ## 5. Backups and restoring
 * Every 6 hours the server writes a consistent snapshot to the backup folder and keeps the newest 28 (about a week). A final one is taken on a clean shutdown (`SIGTERM`, which Docker/Fly/Railway send on redeploy).
 * Backups on the same disk do not protect against losing the disk. **Copy them off the machine** regularly (e.g. `rclone`/`rsync` in a cron job to another provider). For continuous replication look at Litestream.

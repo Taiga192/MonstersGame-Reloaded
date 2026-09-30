@@ -90,6 +90,36 @@ try {
   await waitText('Your save');
   ok('Game page shows the save status', /Saved in this browser/.test(await text()));
   ok('test tools are off by default on the public site', await page.evaluate(() => !document.querySelector('#dev details')));
+
+  // 11. admin page (single player: always available): change the raid cooldown, reload, it must still be changed; then wipe the world
+  ok('Admin menu exists in single player', await page.evaluate(() => /Admin/.test(document.querySelector('#top nav')?.textContent ?? '')));
+  await page.evaluate(() => { location.hash = '#/admin/settings'; });
+  await waitText('Raid cooldown');
+  await page.evaluate(() => {
+    const f = [...document.querySelectorAll('#view form[data-submit="/admin/setting"]')].find((x) => (x.querySelector('[name=key]') as HTMLInputElement).value === 'attackCooldown')!;
+    (f.querySelector('[name=value]') as HTMLInputElement).value = '3';
+    f.dispatchEvent(new Event('submit', { cancelable: true }));
+  });
+  await page.waitForFunction(() => /reset \(10\)/.test(document.querySelector('#view')?.textContent ?? ''), { timeout: 15000 });
+  await page.reload({ waitUntil: 'load' });
+  await page.evaluate(() => { location.hash = '#/admin/settings'; });
+  await waitText('Raid cooldown');
+  ok('a changed cooldown is saved in the browser database (still 3 min after reload)', await page.evaluate(() => /reset \(10\)/.test(document.querySelector('#view')?.textContent ?? '')));
+  await page.evaluate(() => { location.hash = '#/admin/world'; });
+  await waitText('Wipe the world');
+  await page.evaluate(() => {
+    window.confirm = () => true; // (a real confirm() dialog would block the automated browser)
+    const f = document.querySelector('#view form[data-submit="/admin/wipe"]')!;
+    (f.querySelector('[name=confirm]') as HTMLInputElement).value = 'WIPE';
+    f.dispatchEvent(new Event('submit', { cancelable: true }));
+  });
+  let wiped: { total: number; allLevel1: boolean } | undefined;
+  for (let i = 0; i < 40 && !wiped; i++) {
+    await new Promise((r) => setTimeout(r, 500));
+    const r = await page.evaluate(async () => { const x = await (await fetch('api/highscore?type=level&size=100')).json(); return { total: x.total as number, allLevel1: x.rows.every((y: any) => y.level === 1) }; });
+    if (r.total === 101 && r.allLevel1) wiped = r;
+  }
+  ok('wipe: character restarted and fresh bots were created (101 players, all level 1)', !!wiped);
 } catch (e) {
   ok('test run', false, String(e));
 } finally {

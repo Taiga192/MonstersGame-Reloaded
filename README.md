@@ -96,3 +96,20 @@ GitHub Pages can only host static files, so there is no server and no database s
 - [x] Dungeon (weekly ladder, guardians, loot, relic dealer, bots delve)
 - [x] Automatic bots (personas, clans, wars, arena, market, dungeon; they start from zero)
 - [ ] Balance pass against real-game data
+
+## Admin page (rates, cooldowns, wipes, speed servers)
+An **Admin** entry appears in the menu for admins. There you can change, without touching code and effective immediately:
+* **Rates:** an XP multiplier, a gold multiplier (hunting, graveyard work, relic dealer, bites; gold taken from other players is not multiplied) and the XP needed per level.
+* **Every cooldown and limit:** raid cooldown, protection, hunt portion and daily hunting time, work shift length, Ancestral Site, dungeon, arena, plus combat, progression, economy and clan numbers (about 60 settings, each with safe limits).
+* **Presets:** Normal, Double XP/gold, Speed server (5x with short cooldowns) in one click.
+* **Wipe the world:** keep all accounts and reset their characters, or keep only admin accounts. Clans, market, mail, battles, bots and so on are deleted and fresh bots start from level 1. Settings and the audit log survive.
+* **Players:** search, edit level / gold / attributes / health, give items, release a stuck character, reset a password, make admin, delete.
+* **Announcement** mail to everyone, and a **log** of everything admins did.
+
+**Who is an admin?** Single player (browser build): you, always. Multiplayer server: only players with the admin flag, which you set by hand on the server, so nobody can promote themselves:
+```bash
+node scripts/admin.ts /data/monsters.db grant MyName      # Docker: docker compose exec game node scripts/admin.ts /data/monsters.db grant MyName
+node scripts/admin.ts /data/monsters.db list
+node scripts/admin.ts /data/monsters.db revoke MyName
+```
+On a server, wiping, deleting accounts, resetting passwords and giving admin rights ask for the admin's password again. Settings are stored in the database (only what differs from `src/config.ts`), so they survive restarts and come with backups.

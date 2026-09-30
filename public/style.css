@@ -78,3 +78,8 @@ label { display: block; margin: .5rem 0 .2rem; color: var(--muted); font-size: .
 .pager a, .pager span { min-width: 2rem; text-align: center; padding: .15rem .55rem; border: 1px solid var(--line); border-radius: 5px; }
 .pager a.cur { background: var(--accent); border-color: var(--accent); color: #fff; }
 .pager span { border-color: transparent; }
+
+/* admin */
+button.bad { background: var(--bad); color: #fff; }
+textarea { background: #0e0a0e; color: var(--text); border: 1px solid var(--line); border-radius: 5px; padding: .4rem .6rem; font: inherit; }
+code { background: #0e0a0e; padding: 0 .3rem; border-radius: 4px; }

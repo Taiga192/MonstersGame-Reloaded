@@ -16,7 +16,7 @@ export interface Player {
   ancestral_at: number; ancestral_wins: number; potion_stat_until: number; vitality_hp: number;
   referrer_id: number | null; referral_paid: number;
   clan_id: number | null; clan_role: string | null;
-  wins: number; losses: number; is_bot: number; created_at: number;
+  wins: number; losses: number; is_bot: number; is_admin: number; created_at: number;
 }
 
 export type Stats = Record<Stat, number>;
@@ -147,13 +147,14 @@ export function battleStats(db: DB, p: Player, opts: { ancestral: boolean; equip
   return st;
 }
 
-export interface XpResult { levelsGained: number; goldBonus: number; referralPaid: boolean }
+export interface XpResult { levelsGained: number; goldBonus: number; referralPaid: boolean; xpGained: number }
 
 /** Award XP, handle level-ups (gold bonus, max HP, partial heal) and the recruit bonus at level 3. */
 export function awardXp(db: DB, id: number, xp: number, now: number): XpResult {
   const p = loadPlayer(db, id, now);
   let { level, xp: cur, max_hp: maxHp, gold, hp } = p;
-  cur += xp;
+  const xpGained = xp > 0 ? Math.max(1, Math.round(xp * CFG.rateXp)) : 0; // the world's XP rate (admin page) applies to every source
+  cur += xpGained;
   let levelsGained = 0, goldBonus = 0;
   while (cur >= CFG.xpToNext(level)) {
     cur -= CFG.xpToNext(level);
@@ -171,5 +172,5 @@ export function awardXp(db: DB, id: number, xp: number, now: number): XpResult {
     awardXp(db, p.referrer_id, CFG.recruitXp, now);
     referralPaid = true;
   }
-  return { levelsGained, goldBonus, referralPaid };
+  return { levelsGained, goldBonus, referralPaid, xpGained };
 }

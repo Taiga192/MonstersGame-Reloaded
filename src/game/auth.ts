@@ -80,6 +80,21 @@ export function changePassword(db: DB, playerId: number, current: unknown, next:
   void now;
 }
 
+/** Re-check the password of an already logged-in player before a dangerous action (wipe, deleting accounts, admin flags). */
+export function confirmPassword(db: DB, playerId: number, password: unknown) {
+  const p = db.prepare('SELECT pass_hash FROM players WHERE id = ? AND is_bot = 0').get(playerId) as { pass_hash: string } | undefined;
+  assert(p && typeof password === 'string' && password.length <= CFG.passwordMax && verify(password, p.pass_hash), 'bad_password', 'Your password is wrong', 403);
+}
+
+/** Admin tool: set a new password for someone and end all their sessions. */
+export function adminSetPassword(db: DB, playerId: number, next: unknown) {
+  assert(typeof next === 'string' && next.length >= CFG.passwordMin && next.length <= CFG.passwordMax, 'bad_password', `The new password must be ${CFG.passwordMin}-${CFG.passwordMax} characters`);
+  const p = db.prepare('SELECT is_bot FROM players WHERE id = ?').get(playerId) as { is_bot: number } | undefined;
+  assert(p && !p.is_bot, 'not_found', 'No such player', 404);
+  db.prepare('UPDATE players SET pass_hash = ? WHERE id = ?').run(hash(next as string), playerId);
+  db.prepare('DELETE FROM sessions WHERE player_id = ?').run(playerId);
+}
+
 /** Remove expired sessions (run daily; expired ones are also deleted when they are presented). */
 export function purgeExpiredSessions(db: DB, now: number) {
   return Number(db.prepare('DELETE FROM sessions WHERE created_at < ?').run(now - CFG.sessionMaxAge).changes);

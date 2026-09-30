@@ -159,6 +159,7 @@ export function fight(db: DB, id: number, now: number, rng: Rng): DungeonFightRe
 
   const xp = mon.xp;
   const lv = awardXp(db, id, xp, now);
+  const xpGained = lv.xpGained;
   let drop: { name: string; value: number } | null = null;
   if (rng() < CFG.dungeonDropChance) {
     const row = lootRow(r.depth);
@@ -177,10 +178,10 @@ export function fight(db: DB, id: number, now: number, rng: Rng): DungeonFightRe
   const depth = r.depth + 1;
   db.prepare(
     `UPDATE dungeon SET depth = ?, reached_at = ?, hp = ?, last_at = ?, kills = kills + 1, xp_week = xp_week + ?, best_ever = MAX(best_ever, ?), pending = ? WHERE player_id = ?`,
-  ).run(depth, now, res.hpLeft, now, xp, depth - 1, choice ? JSON.stringify(choice) : null, id);
+  ).run(depth, now, res.hpLeft, now, xpGained, depth - 1, choice ? JSON.stringify(choice) : null, id);
   db.prepare('UPDATE players SET dungeon_until = ? WHERE id = ?').run(now + CFG.dungeonIdleLimit, id); // activity keeps the run alive
   bump(db, id, 'dungeon_levels');
-  return { ...base, won: true, died: false, hpLeft: res.hpLeft, xp, levelsGained: lv.levelsGained, drop, choice, nextDepth: depth, cooldownUntil: null };
+  return { ...base, won: true, died: false, hpLeft: res.hpLeft, xp: xpGained, levelsGained: lv.levelsGained, drop, choice, nextDepth: depth, cooldownUntil: null };
 }
 
 /** Pick one of the guardian's rewards (allowed inside or outside the dungeon; the rest are gone). */
@@ -203,7 +204,7 @@ export function sellLoot(db: DB, id: number, lootId: number | 'all', now: number
     ? db.prepare('SELECT id, value FROM dungeon_loot WHERE player_id = ?').all(id)
     : db.prepare('SELECT id, value FROM dungeon_loot WHERE player_id = ? AND id = ?').all(id, lootId)) as { id: number; value: number }[];
   assert(rows.length, 'no_loot', 'Nothing to sell', 404);
-  const gold = rows.reduce((s, r) => s + r.value, 0);
+  const gold = Math.round(rows.reduce((s, r) => s + r.value, 0) * CFG.rateGold);
   db.prepare(`DELETE FROM dungeon_loot WHERE player_id = ? ${lootId === 'all' ? '' : 'AND id = ?'}`).run(...(lootId === 'all' ? [id] : [id, lootId]));
   db.prepare('UPDATE players SET gold = gold + ? WHERE id = ?').run(gold, id);
   return { gold, count: rows.length };
