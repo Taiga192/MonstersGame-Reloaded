@@ -43,6 +43,8 @@ export function createApi({ db, now, rng, devClock, assets, middleware = [], glo
 
   app.onError((e, c) => {
     if (e instanceof GameError) return c.json({ error: e.code, message: e.message }, e.status as 400);
+    // a field of the wrong type (missing, null, boolean, list...) that reached a query: the client's mistake, not ours
+    if (e instanceof TypeError && /bound to SQLite/i.test(e.message)) return c.json({ error: 'bad_request', message: 'A field has the wrong type' }, 400);
     console.error(e);
     return c.json({ error: 'internal', message: 'Internal error' }, 500);
   });
