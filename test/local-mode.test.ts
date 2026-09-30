@@ -18,7 +18,7 @@ async function boot(local: boolean, api?: object) {
   w.eval(readFileSync('public/app.js', 'utf8'));
   const doc = w.document as Document;
   const until = async (cond: () => boolean, what: string) => { for (let i = 0; i < 500; i++) { if (cond()) return; await new Promise((r) => setTimeout(r, 20)); } { const e = new Error(`timeout: ${what}\nTOAST: ${doc.querySelector('#toast')?.textContent}\nERRORS: ${errors.join(' | ')}\nVIEW: ${doc.querySelector('#view')!.textContent!.replace(/\s+/g, ' ').slice(0, 200)}`); w.close(); throw e; } };
-  await until(() => !!doc.querySelector('#reg'), 'login page');
+  await until(() => !!doc.querySelector('#reg'), 'login page'); await new Promise((r) => setTimeout(r, 50)); // the page attaches its form handlers a tick after rendering
   (doc.querySelector('#reg [name=name]') as HTMLInputElement).value = 'Localy';
   (doc.querySelector('#reg [name=password]') as HTMLInputElement).value = 'secret12';
   doc.querySelector('#reg')!.dispatchEvent(new w.Event('submit', { cancelable: true }));

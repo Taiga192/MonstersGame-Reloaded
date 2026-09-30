@@ -34,7 +34,7 @@ async function boot() {
 test('UI: register, browse every page, train, raid with bots, dev tools', async () => {
   const { w, doc, until, view, go, click, errors, close } = await boot();
   try {
-  await until(() => !!doc.querySelector('#reg'), 'login page');
+  await until(() => !!doc.querySelector('#reg'), 'login page'); await new Promise((r) => setTimeout(r, 50)); // the page attaches its form handlers a tick after rendering
 
   // register
   (doc.querySelector('#reg [name=name]') as HTMLInputElement).value = 'Tester';
@@ -167,7 +167,7 @@ test('UI: public victim link page', async () => {
 test('UI: arena, achievements, temple, hardening, mail, clan forum & permissions, highscores', async () => {
   const { w, doc, until, view, go, click, errors, close } = await boot();
   try {
-    await until(() => !!doc.querySelector('#reg'), 'login page');
+    await until(() => !!doc.querySelector('#reg'), 'login page'); await new Promise((r) => setTimeout(r, 50)); // the page attaches its form handlers a tick after rendering
     (doc.querySelector('#reg [name=name]') as HTMLInputElement).value = 'Social';
     (doc.querySelector('#reg [name=password]') as HTMLInputElement).value = 'secret12';
     doc.querySelector('#reg')!.dispatchEvent(new w.Event('submit', { cancelable: true }));
@@ -261,7 +261,7 @@ test('UI: arena, achievements, temple, hardening, mail, clan forum & permissions
 test('UI: gear is split into categories in store and inventory, with an equipped marker', async () => {
   const { w, doc, until, view, go, click, errors, close } = await boot();
   try {
-    await until(() => !!doc.querySelector('#reg'), 'login page');
+    await until(() => !!doc.querySelector('#reg'), 'login page'); await new Promise((r) => setTimeout(r, 50)); // the page attaches its form handlers a tick after rendering
     (doc.querySelector('#reg [name=name]') as HTMLInputElement).value = 'Gearhead';
     (doc.querySelector('#reg [name=password]') as HTMLInputElement).value = 'secret12';
     doc.querySelector('#reg')!.dispatchEvent(new w.Event('submit', { cancelable: true }));
@@ -298,7 +298,7 @@ test('UI: gear is split into categories in store and inventory, with an equipped
 test('UI: test-tool buttons set up a clan war end to end', async () => {
   const { w, doc, until, view, go, click, errors, close } = await boot();
   try {
-    await until(() => !!doc.querySelector('#reg'), 'login page');
+    await until(() => !!doc.querySelector('#reg'), 'login page'); await new Promise((r) => setTimeout(r, 50)); // the page attaches its form handlers a tick after rendering
     (doc.querySelector('#reg [name=name]') as HTMLInputElement).value = 'Warlord';
     (doc.querySelector('#reg [name=password]') as HTMLInputElement).value = 'secret12';
     doc.querySelector('#reg')!.dispatchEvent(new w.Event('submit', { cancelable: true }));
@@ -340,7 +340,7 @@ test('UI: test-tool buttons set up a clan war end to end', async () => {
 test('UI: war room tab lists the enemy roster, attacks a random enemy, and shows the scoreboard', async () => {
   const { w, doc, until, view, go, click, errors, close } = await boot();
   try {
-    await until(() => !!doc.querySelector('#reg'), 'login page');
+    await until(() => !!doc.querySelector('#reg'), 'login page'); await new Promise((r) => setTimeout(r, 50)); // the page attaches its form handlers a tick after rendering
     (doc.querySelector('#reg [name=name]') as HTMLInputElement).value = 'General';
     (doc.querySelector('#reg [name=password]') as HTMLInputElement).value = 'secret12';
     doc.querySelector('#reg')!.dispatchEvent(new w.Event('submit', { cancelable: true }));
@@ -381,7 +381,7 @@ test('UI: war room tab lists the enemy roster, attacks a random enemy, and shows
 test('UI: highscore has working pagination, jump-to-rank, page size, and marks your row', async () => {
   const { w, doc, until, view, go, click, errors, close } = await boot();
   try {
-    await until(() => !!doc.querySelector('#reg'), 'login page');
+    await until(() => !!doc.querySelector('#reg'), 'login page'); await new Promise((r) => setTimeout(r, 50)); // the page attaches its form handlers a tick after rendering
     (doc.querySelector('#reg [name=name]') as HTMLInputElement).value = 'Ranked';
     (doc.querySelector('#reg [name=password]') as HTMLInputElement).value = 'secret12';
     doc.querySelector('#reg')!.dispatchEvent(new w.Event('submit', { cancelable: true }));
@@ -445,7 +445,7 @@ test('UI: highscore has working pagination, jump-to-rank, page size, and marks y
 test('UI: bot test tools report, add bots and make them act', async () => {
   const { w, doc, until, view, close } = await boot();
   try {
-    await until(() => !!doc.querySelector('#reg'), 'login page');
+    await until(() => !!doc.querySelector('#reg'), 'login page'); await new Promise((r) => setTimeout(r, 50)); // the page attaches its form handlers a tick after rendering
     (doc.querySelector('#reg [name=name]') as HTMLInputElement).value = 'Watcher';
     (doc.querySelector('#reg [name=password]') as HTMLInputElement).value = 'secret12';
     doc.querySelector('#reg')!.dispatchEvent(new w.Event('submit', { cancelable: true }));
@@ -466,7 +466,7 @@ test('UI: bot test tools report, add bots and make them act', async () => {
 test('UI: the dungeon loop — enter, locks, fight, guardian reward choice, leave, cooldown, relic dealer, weekly ranking', async () => {
   const { w, doc, until, view, go, click, errors, close } = await boot();
   try {
-    await until(() => !!doc.querySelector('#reg'), 'login page');
+    await until(() => !!doc.querySelector('#reg'), 'login page'); await new Promise((r) => setTimeout(r, 50)); // the page attaches its form handlers a tick after rendering
     (doc.querySelector('#reg [name=name]') as HTMLInputElement).value = 'Delver';
     (doc.querySelector('#reg [name=password]') as HTMLInputElement).value = 'secret12';
     doc.querySelector('#reg')!.dispatchEvent(new w.Event('submit', { cancelable: true }));
@@ -547,7 +547,7 @@ test('UI: the dungeon loop — enter, locks, fight, guardian reward choice, leav
 test('UI: dying in the dungeon keeps everything, shows the result and locks re-entry', async () => {
   const { w, doc, until, view, go, click, errors, close } = await boot();
   try {
-    await until(() => !!doc.querySelector('#reg'), 'login page');
+    await until(() => !!doc.querySelector('#reg'), 'login page'); await new Promise((r) => setTimeout(r, 50)); // the page attaches its form handlers a tick after rendering
     (doc.querySelector('#reg [name=name]') as HTMLInputElement).value = 'Doomed';
     (doc.querySelector('#reg [name=password]') as HTMLInputElement).value = 'secret12';
     doc.querySelector('#reg')!.dispatchEvent(new w.Event('submit', { cancelable: true }));
@@ -574,7 +574,7 @@ test('UI: dying in the dungeon keeps everything, shows the result and locks re-e
 test('UI: an older, slower render can never overwrite a newer one (regression: stale dungeon page after entering)', async () => {
   const { w, doc, until, view, go, close } = await boot();
   try {
-    await until(() => !!doc.querySelector('#reg'), 'login page');
+    await until(() => !!doc.querySelector('#reg'), 'login page'); await new Promise((r) => setTimeout(r, 50)); // the page attaches its form handlers a tick after rendering
     (doc.querySelector('#reg [name=name]') as HTMLInputElement).value = 'Racer';
     (doc.querySelector('#reg [name=password]') as HTMLInputElement).value = 'secret12';
     doc.querySelector('#reg')!.dispatchEvent(new w.Event('submit', { cancelable: true }));
@@ -603,7 +603,7 @@ test('UI: an older, slower render can never overwrite a newer one (regression: s
 test('UI: the hunt page says hunters are safe, and vitality potions show the +150 cap and progress', async () => {
   const { w, doc, until, view, go, click, errors, close } = await boot();
   try {
-    await until(() => !!doc.querySelector('#reg'), 'login page');
+    await until(() => !!doc.querySelector('#reg'), 'login page'); await new Promise((r) => setTimeout(r, 50)); // the page attaches its form handlers a tick after rendering
     (doc.querySelector('#reg [name=name]') as HTMLInputElement).value = 'Careful';
     (doc.querySelector('#reg [name=password]') as HTMLInputElement).value = 'secret12';
     doc.querySelector('#reg')!.dispatchEvent(new w.Event('submit', { cancelable: true }));

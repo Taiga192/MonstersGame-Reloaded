@@ -45,7 +45,7 @@ async function boot(publicDir: string) {
     { const e = new Error(`timeout waiting for ${what}\nVIEW: ${doc.querySelector('#view')!.textContent!.slice(0, 300)}`); w.close(); throw e; }
   };
   const register = async (name: string) => {
-    await until(() => !!doc.querySelector('#reg'), 'login page');
+    await until(() => !!doc.querySelector('#reg'), 'login page'); await new Promise((r) => setTimeout(r, 50)); // the page attaches its form handlers a tick after rendering
     (doc.querySelector('#reg [name=name]') as HTMLInputElement).value = name;
     (doc.querySelector('#reg [name=password]') as HTMLInputElement).value = 'secret12';
     doc.querySelector('#reg')!.dispatchEvent(new w.Event('submit', { cancelable: true }));
