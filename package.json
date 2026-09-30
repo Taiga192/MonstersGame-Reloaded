@@ -9,11 +9,11 @@
   "scripts": {
     "start": "node src/server.ts",
     "dev": "node --watch src/server.ts",
-    "test": "node --test test/",
+    "test": "node --test \"test/*.test.ts\"",
     "typecheck": "tsc --noEmit",
     "assets": "node scripts/assets.ts",
     "art": "node scripts/import-art.ts",
-    "test:wasm": "node --import ./test/wasm-preload.ts --test test/",
+    "test:wasm": "node --import ./test/wasm-preload.ts --test \"test/*.test.ts\"",
     "build:pages": "node scripts/build-pages.ts",
     "preview": "node scripts/preview.ts dist /MonstersGame/ 8080",
     "e2e": "node scripts/e2e-browser.ts",

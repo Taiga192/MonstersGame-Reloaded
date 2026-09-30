@@ -44,4 +44,4 @@ Thumbs.db
 .claude/settings.local.json
 
 # documentation (you had this ignored; remove the line if the docs should be in git)
-docs/prompts
+docs
