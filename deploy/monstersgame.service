@@ -1,0 +1,49 @@
+# systemd unit for running the game WITHOUT Docker (alternative; the Docker route above is the tested one).
+# Setup: create the user (sudo useradd --system --home /opt/monstersgame --shell /usr/sbin/nologin monsters), put the project in
+# /opt/monstersgame (owned by root, read-only for the service), `npm ci --omit=dev`, create /etc/monstersgame.env (chmod 600), then
+#   sudo cp deploy/monstersgame.service /etc/systemd/system/ && sudo systemctl enable --now monstersgame
+# Check the hardening score with:  systemd-analyze security monstersgame
+[Unit]
+Description=MonstersGame-Reloaded server
+After=network.target
+
+[Service]
+User=monsters
+Group=monsters
+WorkingDirectory=/opt/monstersgame
+EnvironmentFile=/etc/monstersgame.env
+Environment=NODE_ENV=production HOST=127.0.0.1 PORT=3000 TRUST_PROXY=1 DB_PATH=/var/lib/monstersgame/monsters.db BACKUP_DIR=/var/lib/monstersgame/backups
+ExecStart=/usr/bin/node src/server.ts
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+# --- sandbox: the process can write only to its own data directory and has no privileges ---
+StateDirectory=monstersgame
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+# (MemoryDenyWriteExecute must stay off: Node's JIT compiler needs writable+executable memory)
+
+[Install]
+WantedBy=multi-user.target

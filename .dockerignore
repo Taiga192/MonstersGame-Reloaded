@@ -1,0 +1,12 @@
+node_modules
+dist
+dist-online
+*.db
+*.db-*
+art-src
+art-inbox
+test
+.git
+.github
+deploy
+.env

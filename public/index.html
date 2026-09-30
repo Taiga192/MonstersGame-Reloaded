@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MonstersGame-Reloaded</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="config.js"></script>
+</head>
+<body>
+  <header id="top"></header>
+  <main id="view"><div class="card center"><p class="muted">Loading the game…</p></div></main>
+  <aside id="dev"></aside>
+  <div id="toast" role="status"></div>
+  <!-- local-boot.js only does something in the browser-only (GitHub Pages) build; it must run before app.js -->
+  <script type="module" src="local-boot.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

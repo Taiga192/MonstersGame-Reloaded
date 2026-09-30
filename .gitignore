@@ -1,0 +1,47 @@
+# dependencies
+node_modules/
+
+# secrets / local config
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# databases and backups (live game data, never commit)
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+backups/
+data/
+
+# build output
+dist/
+dist-online/
+*.tsbuildinfo
+
+# art work in progress
+art-src/
+art-inbox/
+
+# logs, temp, coverage
+*.log
+npm-debug.log*
+.tmp/
+tmp/
+coverage/
+.nyc_output/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Claude Code local files
+.claude/settings.local.json
+
+# documentation (you had this ignored; remove the line if the docs should be in git)
+docs

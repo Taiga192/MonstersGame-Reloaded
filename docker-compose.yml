@@ -1,0 +1,32 @@
+# Game server, hardened. Start:  cp .env.example .env  (edit it)  &&  docker compose up -d --build
+# Put a reverse proxy with HTTPS in front (deploy/Caddyfile); see docs/SERVER-HARDENING.md.
+services:
+  game:
+    build: .
+    init: true                        # proper signal handling / zombie reaping (clean shutdown + final backup)
+    restart: unless-stopped
+    # Published on the LOOPBACK interface only: nothing on the internet can reach the game port directly (Docker would otherwise
+    # bypass the firewall for published ports). The reverse proxy on this machine is the only public entrance.
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - mg-data:/data                 # database + backups: the only writable, persistent place
+    read_only: true                   # the container's own filesystem cannot be modified
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL                           # no Linux capabilities at all
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 200
+    mem_limit: 512m
+    logging:
+      driver: local
+      options: { max-size: "10m", max-file: "5" }   # logs cannot fill the disk
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      TRUST_PROXY: "1"                # we sit behind exactly one proxy (Caddy on this machine)
+volumes:
+  mg-data:

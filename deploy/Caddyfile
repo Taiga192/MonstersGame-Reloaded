@@ -1,0 +1,33 @@
+# Reverse proxy with automatic HTTPS (Caddy gets and renews the certificate itself).
+# Replace game.example.com with your domain; its DNS A/AAAA record must point at this server. Ports 80 and 443 must be open.
+game.example.com {
+	encode zstd gzip
+
+	# refuse oversized requests before they reach the game (the game also limits bodies to 100 KB)
+	request_body {
+		max_size 200KB
+	}
+
+	reverse_proxy 127.0.0.1:3000 {
+		# Caddy sets X-Forwarded-For to the real client address itself. The game (TRUST_PROXY=1) uses the last entry of that header
+		# for rate limits, so a client cannot fake its address.
+		transport http {
+			dial_timeout 5s
+			response_header_timeout 30s
+		}
+	}
+
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	}
+
+	# Access logs contain visitors' IP addresses: rotate them, keep them short, and mention them in your privacy notice.
+	log {
+		output file /var/log/caddy/game.log {
+			roll_size 10MiB
+			roll_keep 5
+			roll_keep_for 168h
+		}
+	}
+}
