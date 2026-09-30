@@ -154,12 +154,20 @@ test('by default the server only listens on the loopback interface (a proxy is t
   if (!external) return; // no non-loopback address on this machine: nothing to test
   const run = async (env: Record<string, string>) => {
     const port = 3800 + Math.floor(Math.random() * 300);
-    const child = spawn('node', ['src/server.ts'], { env: { ...process.env, NODE_ENV: 'production', PORT: String(port), DB_PATH: ':memory:', BOTS: '0', BACKUP_EVERY_HOURS: '0', ...env }, stdio: ['ignore', 'pipe', 'ignore'] });
-    let log = ''; child.stdout.on('data', (d) => (log += d));
+    const child = spawn('node', ['src/server.ts'], { env: { ...process.env, NODE_ENV: 'production', PORT: String(port), DB_PATH: ':memory:', BOTS: '0', BACKUP_EVERY_HOURS: '0', ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
+    let log = ''; child.stdout.on('data', (d) => (log += d)); child.stderr.on('data', (d) => (log += d));
     try {
       for (let i = 0; i < 100 && !/API on/.test(log); i++) await new Promise((r) => setTimeout(r, 100));
-      const reach = async (host: string) => fetch(`http://${host}:${port}/api/catalog`, { signal: AbortSignal.timeout(2000) }).then((r) => r.ok, () => false);
-      return { loopback: await reach('127.0.0.1'), external: await reach(external), log };
+      // the machine may be busy (the whole suite runs in parallel, CI runners are small): allow a few slow attempts before calling it unreachable
+      const reach = async (host: string, tries = 1) => {
+        for (let i = 0; i < tries; i++) {
+          if (await fetch(`http://${host}:${port}/api/catalog`, { signal: AbortSignal.timeout(5000) }).then((r) => r.ok, () => false)) return true;
+          await new Promise((r) => setTimeout(r, 300));
+        }
+        return false;
+      };
+      const loopback = await reach('127.0.0.1', 10);
+      return { loopback, external: await reach(external, loopback ? 3 : 1), log };
     } finally { child.kill('SIGKILL'); }
   };
   const secure = await run({});
