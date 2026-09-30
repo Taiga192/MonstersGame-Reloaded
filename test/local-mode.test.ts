@@ -11,12 +11,13 @@ async function boot(local: boolean, api?: object) {
   const app = createApp({ db: openDb(), now: () => 1_800_000_000_000, rng: seeded(3), devClock: { offset: 0 } });
   const dom = new JSDOM(readFileSync('public/index.html', 'utf8'), { url: 'http://localhost/game/', runScripts: 'outside-only', pretendToBeVisual: true });
   const w = dom.window as any;
+  const errors: string[] = []; dom.virtualConsole.on('jsdomError', (e) => errors.push(String(e.stack ?? e).slice(0, 300))); dom.virtualConsole.on('error', (...a) => errors.push(a.map(String).join(' ').slice(0, 300)));
   w.MG_LOCAL = local; if (api) w.MG_LOCAL_API = api;
   w.fetch = (url: string, init?: RequestInit) => app.request('/' + String(url).replace(/^https?:\/\/localhost\/(game\/)?/, '').replace(/^\//, ''), init);
   w.confirm = () => true;
   w.eval(readFileSync('public/app.js', 'utf8'));
   const doc = w.document as Document;
-  const until = async (cond: () => boolean, what: string) => { for (let i = 0; i < 500; i++) { if (cond()) return; await new Promise((r) => setTimeout(r, 20)); } { const e = new Error(`timeout: ${what}\n${doc.querySelector('#view')!.textContent!.slice(0, 300)}`); w.close(); throw e; } };
+  const until = async (cond: () => boolean, what: string) => { for (let i = 0; i < 500; i++) { if (cond()) return; await new Promise((r) => setTimeout(r, 20)); } { const e = new Error(`timeout: ${what}\nTOAST: ${doc.querySelector('#toast')?.textContent}\nERRORS: ${errors.join(' | ')}\nVIEW: ${doc.querySelector('#view')!.textContent!.replace(/\s+/g, ' ').slice(0, 200)}`); w.close(); throw e; } };
   await until(() => !!doc.querySelector('#reg'), 'login page');
   (doc.querySelector('#reg [name=name]') as HTMLInputElement).value = 'Localy';
   (doc.querySelector('#reg [name=password]') as HTMLInputElement).value = 'secret12';

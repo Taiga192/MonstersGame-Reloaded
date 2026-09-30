@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:net';
 import { readFileSync } from 'node:fs';
 import { networkInterfaces } from 'node:os';
 import { test } from 'node:test';
@@ -149,11 +150,14 @@ test('the frontend uses no inline scripts or event-handler attributes (which the
 });
 
 // ---------------------------------------------------------------- the network surface
+/** Ask the OS for a port nobody uses right now (random guesses can collide with other test processes). */
+const freePort = () => new Promise<number>((res, rej) => { const srv = createServer(); srv.listen(0, '127.0.0.1', () => { const { port } = srv.address() as { port: number }; srv.close(() => res(port)); }); srv.on('error', rej); });
+
 test('by default the server only listens on the loopback interface (a proxy is the public face); HOST=0.0.0.0 opens it', async () => {
   const external = Object.values(networkInterfaces()).flat().find((i) => i && i.family === 'IPv4' && !i.internal)?.address;
   if (!external) return; // no non-loopback address on this machine: nothing to test
   const run = async (env: Record<string, string>) => {
-    const port = 3800 + Math.floor(Math.random() * 300);
+    const port = await freePort();
     const child = spawn('node', ['src/server.ts'], { env: { ...process.env, NODE_ENV: 'production', PORT: String(port), DB_PATH: ':memory:', BOTS: '0', BACKUP_EVERY_HOURS: '0', ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
     let log = ''; child.stdout.on('data', (d) => (log += d)); child.stderr.on('data', (d) => (log += d));
     try {
@@ -173,5 +177,5 @@ test('by default the server only listens on the loopback interface (a proxy is t
   const secure = await run({});
   assert.equal(secure.loopback, true, secure.log); assert.equal(secure.external, false, 'not reachable on the network address by default');
   const open = await run({ HOST: '0.0.0.0' });
-  assert.equal(open.loopback, true); assert.equal(open.external, true, 'reachable when explicitly opened');
+  assert.equal(open.loopback, true, open.log); assert.equal(open.external, true, 'reachable when explicitly opened\n' + open.log);
 });
