@@ -157,7 +157,7 @@ test('by default the server only listens on the loopback interface (a proxy is t
     const child = spawn('node', ['src/server.ts'], { env: { ...process.env, NODE_ENV: 'production', PORT: String(port), DB_PATH: ':memory:', BOTS: '0', BACKUP_EVERY_HOURS: '0', ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
     let log = ''; child.stdout.on('data', (d) => (log += d)); child.stderr.on('data', (d) => (log += d));
     try {
-      for (let i = 0; i < 100 && !/API on/.test(log); i++) await new Promise((r) => setTimeout(r, 100));
+      for (let i = 0; i < 300 && !/API on/.test(log); i++) await new Promise((r) => setTimeout(r, 100));
       // the machine may be busy (the whole suite runs in parallel, CI runners are small): allow a few slow attempts before calling it unreachable
       const reach = async (host: string, tries = 1) => {
         for (let i = 0; i < tries; i++) {

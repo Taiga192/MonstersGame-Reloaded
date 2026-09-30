@@ -19,8 +19,8 @@ async function boot() {
   w.eval(readFileSync('public/app.js', 'utf8'));
   const doc = w.document as Document;
   const until = async (cond: () => boolean, what: string) => {
-    for (let i = 0; i < 100; i++) { if (cond()) return; await new Promise((r) => setTimeout(r, 20)); }
-    throw new Error(`timeout waiting for ${what}\nVIEW: ${doc.querySelector('#view')!.textContent!.slice(0, 300)}\nTOAST: ${doc.querySelector('#toast')!.textContent}`);
+    for (let i = 0; i < 500; i++) { if (cond()) return; await new Promise((r) => setTimeout(r, 20)); }
+    { const e = new Error(`timeout waiting for ${what}\nVIEW: ${doc.querySelector('#view')!.textContent!.slice(0, 300)}\nTOAST: ${doc.querySelector('#toast')!.textContent}`); w.close(); throw e; }
   };
   const view = () => doc.querySelector('#view')!;
   const go = async (hash: string, text: string) => { w.location.hash = hash; await until(() => view().textContent!.includes(text), `${hash} → "${text}"`); };

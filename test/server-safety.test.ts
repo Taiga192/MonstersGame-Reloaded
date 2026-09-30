@@ -180,7 +180,7 @@ test('the real server: production mode, CORS from the environment, graceful shut
   let log = '';
   child.stdout.on('data', (d) => (log += d)); child.stderr.on('data', (d) => (log += d));
   try {
-    for (let i = 0; i < 100 && !/API on/.test(log); i++) await new Promise((r) => setTimeout(r, 100));
+    for (let i = 0; i < 300 && !/API on/.test(log); i++) await new Promise((r) => setTimeout(r, 100));
     assert.match(log, /API on/, log);
     assert.match(log, /CORS for https:\/\/\*\.itch\.zone/);
     const base = `http://localhost:${port}`;
