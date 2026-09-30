@@ -96,7 +96,3 @@ GitHub Pages can only host static files, so there is no server and no database s
 - [x] Dungeon (weekly ladder, guardians, loot, relic dealer, bots delve)
 - [x] Automatic bots (personas, clans, wars, arena, market, dungeon; they start from zero)
 - [ ] Balance pass against real-game data
-
-## Security and hosting
-Operator checklist for Claude Code on the server: [docs/CLAUDE-SERVER-TASK.md](docs/CLAUDE-SERVER-TASK.md).
-See [docs/SECURITY.md](docs/SECURITY.md) (what is protected, residual risks), [docs/SERVER-HARDENING.md](docs/SERVER-HARDENING.md) (safe vServer setup) and [docs/DEPLOY.md](docs/DEPLOY.md).
