@@ -87,10 +87,10 @@ test('changing a cooldown takes effect immediately and is shown in the normal AP
 
 test('every cooldown of every activity can be changed', async () => {
   const { app, boss } = await world();
-  const cooldowns = ['attackCooldown', 'sameOpponentWindow', 'postBattleProtection', 'huntPortion', 'huntBudget', 'ancestralCooldown', 'dungeonCooldown', 'dungeonIdleLimit', 'arenaMinRegistration', 'arenaMaxRegistration', 'workMaxHours', 'searchValidity'];
+  const cooldowns = ['attackCooldown', 'sameOpponentWindow', 'postBattleProtection', 'huntPortion', 'huntBudget', 'ancestralCooldown', 'dungeonCooldown', 'dungeonFightCooldown', 'dungeonIdleLimit', 'arenaMinRegistration', 'arenaMaxRegistration', 'workMaxHours', 'searchValidity'];
   for (const k of cooldowns) {
     const row = TUNABLES.find((x) => x.key === k)!;
-    const v = row.int ? 7 : 2;
+    const v = k === 'dungeonIdleLimit' ? 40 : row.int ? 7 : 2; // (the idle limit has to stay longer than the wait between fights)
     assert.equal((await post(app, '/api/admin/setting', { key: k, value: v }, boss.h)).status, 200, k);
     assert.equal(CFG[row.key as 'attackCooldown'], v * row.scale, k);
   }
@@ -131,6 +131,18 @@ test('setting values are validated: unknown keys, prototype tricks, NaN, strings
   assert.equal((await set('stealMin', 0.5)).status, 400, 'minimum above the maximum');
   assert.equal((await set('stealMax', 0.01)).status, 400, 'maximum below the minimum');
   assert.equal((await set('workMaxHours', 7.6)).status, 200); assert.equal(CFG.workMaxHours, 8, 'whole numbers are rounded');
+});
+
+test('the wait between dungeon fights must stay shorter than the idle limit (and the reverse)', async () => {
+  const { app, boss } = await world();
+  const set = (key: string, value: number) => post(app, '/api/admin/setting', { key, value }, boss.h);
+  assert.equal((await set('dungeonFightCooldown', 30)).status, 400, 'equal to the idle limit: every run would end while waiting');
+  assert.equal((await set('dungeonFightCooldown', 45)).status, 400);
+  assert.equal((await set('dungeonFightCooldown', 10)).status, 200);
+  assert.equal((await set('dungeonIdleLimit', 10)).status, 400);
+  assert.equal((await set('dungeonIdleLimit', 60)).status, 200);
+  assert.equal((await set('dungeonFightCooldown', 0)).status, 200, '0 switches the wait off');
+  assert.equal((await set('dungeonCheckpoint', 10)).status, 200); assert.equal(CFG.dungeonCheckpoint, 10);
 });
 
 test('every setting has sane limits: the default is inside them and the extremes are accepted', () => {

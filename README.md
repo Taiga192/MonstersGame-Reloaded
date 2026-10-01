@@ -18,6 +18,8 @@ An endless ladder of monsters. Details: [docs/MECHANICS.md](docs/MECHANICS.md#du
 - Each level has one monster, stronger every level (`dungeonMonsterStat` in `src/config.ts`, tuned with `node scripts/dungeon-calibrate.ts`). Winning: XP (3 + 0.4 per level, a village pays 2), **25 % drop chance** of a valuable item, one level deeper. Every **10th level is a guardian**: beat it to choose 1 of 3 high value rewards.
 - **Dying costs nothing** (XP and items are kept) but ends the run. Progress is saved when you leave or die and **resets every Monday 00:00 UTC**; loot stays until sold to the **Relic Dealer** (Town). A weekly **Dungeon** highscore ranks levels cleared.
 - While inside you cannot be raided and cannot raid, hunt, work, shop or train.
+- **A wait between fights:** after beating a monster the next one needs **2 minutes** to arrive, so a run takes real time (and the character is locked inside meanwhile: no hunting, working or raiding). Both numbers are on the admin page.
+- **Checkpoints:** every **25th level** is a checkpoint. If you reach it (stand on level 25, 50, 75 ...), the weekly reset sends you back there instead of to level 1; if you did not reach it, you start over. A week without playing keeps your checkpoint.
 - **One run per day:** a **24 hour cooldown** after leaving or dying (which also means no leave-and-re-enter to refill HP and no free retries), and a run idle for **30 min ends by itself** (the dungeon is not a safe house from raids).
 - Bots delve too (fight until dead, claim guardian rewards, sell loot).
 

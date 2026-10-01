@@ -43,6 +43,7 @@ export const TUNABLES: Tunable[] = [
   t('Cooldowns', 'workMaxHours', 'Longest graveyard shift (hours)', 1, 24 * 14, { int: true, unit: 'h' }),
   t('Cooldowns', 'ancestralCooldown', 'Ancestral Site cooldown', 0, 24 * 30, hours),
   t('Cooldowns', 'dungeonCooldown', 'Dungeon cooldown (after leaving or dying)', 0, 24 * 30, hours),
+  t('Cooldowns', 'dungeonFightCooldown', 'Dungeon: wait after beating a monster', 0, 24 * 60, { ...minutes, help: 'Must stay shorter than the idle limit. 0 = no wait.' }),
   t('Cooldowns', 'dungeonIdleLimit', 'Dungeon idle limit', 1, 24 * 60, minutes),
   t('Cooldowns', 'arenaMinRegistration', 'Arena: shortest registration time', 1, 24 * 60, minutes),
   t('Cooldowns', 'arenaMaxRegistration', 'Arena: longest registration time', 1, 24 * 30, hours),
@@ -85,6 +86,7 @@ export const TUNABLES: Tunable[] = [
   t('Arena', 'arenaDecayPerDay', 'Arena: daily decay of points', 0, 1),
 
   t('Dungeon', 'dungeonDropChance', 'Dungeon: chance of a drop per victory', 0, 1),
+  t('Dungeon', 'dungeonCheckpoint', 'Dungeon: a checkpoint every N levels', 1, 1000, { int: true, help: 'Reaching it keeps you on that level after the weekly reset.' }),
   t('Dungeon', 'dungeonMilestone', 'Dungeon: a guardian every N levels', 1, 1000, { int: true }),
   t('Dungeon', 'dungeonRewardOptions', 'Dungeon: reward choices after a guardian', 1, 10, { int: true }),
 
@@ -130,6 +132,8 @@ export function setSetting(db: DB, key: unknown, value: unknown) {
   if (tunable.key === 'stealMax' && raw < CFG.stealMin) throw new GameError('bad_value', 'The maximum share cannot be below the minimum', 400);
   if (tunable.key === 'biteGoldMin' && raw > CFG.biteGoldMax) throw new GameError('bad_value', 'The minimum cannot be above the maximum', 400);
   if (tunable.key === 'biteGoldMax' && raw < CFG.biteGoldMin) throw new GameError('bad_value', 'The maximum cannot be below the minimum', 400);
+  if (tunable.key === 'dungeonFightCooldown' && raw >= CFG.dungeonIdleLimit) throw new GameError('bad_value', 'The wait between fights must be shorter than the idle limit (otherwise every run would end while waiting)', 400);
+  if (tunable.key === 'dungeonIdleLimit' && raw <= CFG.dungeonFightCooldown) throw new GameError('bad_value', 'The idle limit must be longer than the wait between fights', 400);
   if (tunable.key === 'arenaMinRegistration' && raw > CFG.arenaMaxRegistration) throw new GameError('bad_value', 'The shortest time cannot be longer than the longest', 400);
   if (tunable.key === 'arenaMaxRegistration' && raw < CFG.arenaMinRegistration) throw new GameError('bad_value', 'The longest time cannot be shorter than the shortest', 400);
   if (raw === DEFAULTS.get(tunable.key)) db.prepare('DELETE FROM settings WHERE key = ?').run(tunable.key);
@@ -153,7 +157,7 @@ export const PRESETS: Record<string, { label: string; description: string; value
   double: { label: 'Double XP and gold weekend', description: 'Twice the XP and gold, everything else unchanged.', values: { rateXp: 2, rateGold: 2 } },
   speed: {
     label: 'Speed server (5x)', description: 'Five times the XP and gold, short cooldowns, faster hunting and regeneration. A full world in days instead of months.',
-    values: { rateXp: 5, rateGold: 5, attackCooldown: 2, postBattleProtection: 15, sameOpponentWindow: 3, huntPortion: 2, huntBudget: 6, ancestralCooldown: 4, dungeonCooldown: 4, dungeonIdleLimit: 30, arenaMinRegistration: 2, hpRegenPerHour: 50 },
+    values: { rateXp: 5, rateGold: 5, attackCooldown: 2, postBattleProtection: 15, sameOpponentWindow: 3, huntPortion: 2, huntBudget: 6, ancestralCooldown: 4, dungeonCooldown: 4, dungeonFightCooldown: 1, dungeonIdleLimit: 30, arenaMinRegistration: 2, hpRegenPerHour: 50 },
   },
 };
 

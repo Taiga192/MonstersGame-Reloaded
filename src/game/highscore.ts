@@ -53,7 +53,7 @@ export function highscore(db: DB, o: { type: string; race?: string; page?: numbe
     hunter: `${counterBoard('hunt_portions')} ${raceSql('p')}`,
     worker: `${counterBoard('work_hours')} ${raceSql('p')}`,
     // this week's dungeon ladder: levels cleared; the player who got there first ranks higher
-    dungeon: `SELECT p.id, p.name, p.race, p.level, p.xp, p.clan_id, d.depth - 1 AS value, d.reached_at AS reached FROM dungeon d JOIN players p ON p.id = d.player_id WHERE d.week = ${weekOf(now)} AND d.depth > 1 ${raceSql('p')}`,
+    dungeon: `SELECT p.id, p.name, p.race, p.level, p.xp, p.clan_id, d.depth - 1 AS value, d.reached_at AS reached FROM dungeon d JOIN players p ON p.id = d.player_id WHERE d.week = ${weekOf(now)} AND d.kills > 0 ${raceSql('p')}`,
   }[o.type as 'level' | 'wins' | 'loot' | 'hunter' | 'worker' | 'dungeon'];
   // the level board ranks by level first, then XP; the others by their value, then level
   const order = o.type === 'level' ? 'level DESC, xp DESC, id ASC' : o.type === 'dungeon' ? 'value DESC, reached ASC, id ASC' : 'value DESC, level DESC, id ASC';

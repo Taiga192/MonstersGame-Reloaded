@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS clan_wars (
   peace_offer_by INTEGER, ceasefire_offer_by INTEGER
 );
 CREATE TABLE IF NOT EXISTS clan_war_members (war_id INTEGER NOT NULL, player_id INTEGER NOT NULL, clan_id INTEGER NOT NULL, PRIMARY KEY (war_id, player_id));
+CREATE INDEX IF NOT EXISTS clan_war_members_player ON clan_war_members(player_id, war_id); -- every raid asks "are these two at war?"
 CREATE TABLE IF NOT EXISTS battles (
   id INTEGER PRIMARY KEY, attacker_id INTEGER NOT NULL, defender_id INTEGER NOT NULL, winner_id INTEGER NOT NULL,
   gold INTEGER NOT NULL, xp_attacker INTEGER NOT NULL, xp_defender INTEGER NOT NULL,
@@ -96,7 +97,8 @@ CREATE TABLE IF NOT EXISTS dungeon (
   active INTEGER NOT NULL DEFAULT 0, hp INTEGER NOT NULL DEFAULT 0, max_hp INTEGER NOT NULL DEFAULT 0,
   last_at INTEGER NOT NULL DEFAULT 0, cooldown_until INTEGER NOT NULL DEFAULT 0,
   kills INTEGER NOT NULL DEFAULT 0, deaths INTEGER NOT NULL DEFAULT 0, runs INTEGER NOT NULL DEFAULT 0,
-  xp_week INTEGER NOT NULL DEFAULT 0, pending TEXT, best_ever INTEGER NOT NULL DEFAULT 0
+  xp_week INTEGER NOT NULL DEFAULT 0, pending TEXT, best_ever INTEGER NOT NULL DEFAULT 0,
+  ready_at INTEGER NOT NULL DEFAULT 0, checkpoint INTEGER NOT NULL DEFAULT 1 -- next fight allowed at / level the week starts on
 );
 CREATE TABLE IF NOT EXISTS dungeon_loot (
   id INTEGER PRIMARY KEY, player_id INTEGER NOT NULL REFERENCES players(id), name TEXT NOT NULL, value INTEGER NOT NULL,
@@ -198,6 +200,7 @@ function migrate(db: DB) {
   add('inventory', 'hardening', 'INTEGER NOT NULL DEFAULT 0');
   add('clans', 'is_open', 'INTEGER NOT NULL DEFAULT 1');
   add('players', 'is_bot', 'INTEGER NOT NULL DEFAULT 0');
+  add('dungeon', 'ready_at', 'INTEGER NOT NULL DEFAULT 0'); add('dungeon', 'checkpoint', 'INTEGER NOT NULL DEFAULT 1');
   add('players', 'is_admin', 'INTEGER NOT NULL DEFAULT 0'); // multiplayer: set by hand (scripts/admin.ts); single player: everyone is admin anyway
   db.exec('DELETE FROM sessions WHERE length(token) != 64'); // sessions used to store the token itself (48 hex); now only its SHA-256 (64 hex)
 }

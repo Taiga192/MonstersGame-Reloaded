@@ -76,7 +76,7 @@ function resultMessage(path, r) {
   if (path === '/dungeon/enter') return { text: 'You descend into the dungeon…' };
   if (path === '/dungeon/leave') return { text: 'You climb out. Your progress is saved.' };
   if (path === '/dungeon/fight') return r.won
-    ? { text: `Level ${r.depth} cleared! +${r.xp} XP${r.drop ? `, found ${r.drop.name} (${r.drop.value}g)` : ''}${r.choice ? ' — the guardian offers you a reward!' : ''}` }
+    ? { text: `Level ${r.depth} cleared! +${r.xp} XP${r.drop ? `, found ${r.drop.name} (${r.drop.value}g)` : ''}${r.choice ? ' — the guardian offers you a reward!' : ''}${r.checkpoint ? ` — checkpoint: level ${r.checkpoint} is saved!` : ''}` }
     : { err: true, text: `You died on level ${r.depth}. Your XP and items are safe; the level is still waiting for you.` };
   if (path === '/dungeon/reward') return { text: `You take the ${r.name} (worth ${fmt(r.value)}g)` };
   if (path === '/dungeon/sell') return { text: `The dealer pays ${fmt(r.gold)} gold for ${r.count} item${r.count === 1 ? '' : 's'}` };
@@ -408,7 +408,7 @@ function pageHunt() {
 const CATEGORIES = [['weapon', '⚔ Weapons'], ['armor', '🛡 Armor'], ['ring', '💍 Rings'], ['amulet', '🔮 Amulets'], ['potion', '🧪 Potions']];
 const catTabs = (base, cur, counts) => `<div class="tabs">${CATEGORIES.map(([k, n]) => `<a href="#/town/${base}/${k}" class="${k === cur ? 'on' : ''}">${img('items/cat_' + k, 'nav-ico')}${n}${counts ? ` <span class="pill">${counts[k] ?? 0}</span>` : ''}</a>`).join('')}</div>`;
 
-async function pageTown(tab = 'store', sub) {
+async function pageTown(tab = 'store', sub, more) {
   const tabs = [['store', 'Store'], ['inventory', 'Inventory'], ['temple', 'Blood Temple'], ['sentinels', 'Sentinels'], ['graveyard', 'Graveyard'], ['dealer', 'Relic Dealer']];
   const head = `<div class="tabs">${tabs.map(([k, n]) => `<a href="#/town/${k}" class="${k === tab ? 'on' : ''}">${n}</a>`).join('')}</div>`;
   const busy = isBusy();
@@ -488,13 +488,22 @@ async function pageTown(tab = 'store', sub) {
   const cat = CATEGORIES.some(([k]) => k === sub) ? sub : 'weapon';
   const counts = Object.fromEntries(CATEGORIES.map(([k]) => [k, catalog.items.filter((i) => i.slot === k).length]));
   const owned = (key) => me.inventory.filter((i) => i.key === key).length;
-  const rows = catalog.items.filter((i) => i.slot === cat).sort((x, y) => x.minLevel - y.minLevel || x.price - y.price).map((i) => {
+  // every gear line (Blade, Plate, ...) is listed on its own, tier by tier; items far above your level stay folded away
+  const lineOf = (i) => i.key.replace(/_\d+$/, '');
+  const all = catalog.items.filter((i) => i.slot === cat).sort((x, y) => (lineOf(x) === lineOf(y) ? x.minLevel - y.minLevel : catalog.items.findIndex((z) => lineOf(z) === lineOf(x)) - catalog.items.findIndex((z) => lineOf(z) === lineOf(y))) || x.price - y.price);
+  const shown = more === 'all' ? all : all.filter((i) => i.minLevel <= me.level + 8 || owned(i.key));
+  let lastLine = '';
+  const rows = shown.map((i) => {
     const locked = me.level < i.minLevel;
-    return `<tr class="${locked ? 'muted' : ''}"><td>${img('items/' + i.key, 'item-ico')}${esc(i.name)}${owned(i.key) ? ` <span class="pill good">owned ×${owned(i.key)}</span>` : ''}</td><td>${describe(i)}</td><td class="r">Lv ${i.minLevel}</td>
+    const header = lineOf(i) !== lastLine && all.some((z) => lineOf(z) !== lineOf(i)) ? `<tr><th colspan="4">${esc(i.name.replace(/\s*(Mk )?\d+$/, ''))}</th></tr>` : '';
+    lastLine = lineOf(i);
+    return `${header}<tr class="${locked ? 'muted' : ''}"><td>${img('items/' + i.key, 'item-ico')}${esc(i.name)}${owned(i.key) ? ` <span class="pill good">owned ×${owned(i.key)}</span>` : ''}</td><td>${describe(i)}</td><td class="r">Lv ${i.minLevel}</td>
       <td class="r"><button class="sm" data-do="/store/buy" data-body='{"key":"${i.key}"}' data-ok="Purchased ${esc(i.name)}"
       ${locked || busy || me.gold < i.price || (i.potion === 'maxhp' && me.vitalityRoom <= 0) ? 'disabled' : ''}>${fmt(i.price)}g</button></td></tr>`;
   }).join('');
-  return `${head}<div class="card"><h2>Store</h2>${catTabs('store', cat, counts)}${cat === 'potion' ? vitalityNote() : ''}<table><tr><th>Item</th><th>Effect</th><th class="r">Level</th><th></th></tr>${rows}</table></div>`;
+  const hidden = all.length - shown.length;
+  const foot = more === 'all' ? `<p><a href="#/town/store/${cat}">Show only items near my level</a></p>` : hidden ? `<p class="muted">${hidden} more item${hidden === 1 ? '' : 's'} for higher levels. <a href="#/town/store/${cat}/all">Show all</a></p>` : '';
+  return `${head}<div class="card"><h2>Store</h2>${catTabs('store', cat, counts)}${cat === 'potion' ? vitalityNote() : ''}<table><tr><th>Item</th><th>Effect</th><th class="r">Level</th><th></th></tr>${rows}</table>${foot}</div>`;
 }
 /** Vitality Potions add permanent max HP, capped in total (see CFG.vitalityCap). */
 function vitalityNote() {
@@ -725,6 +734,7 @@ function fightHtml(r) {
   const lines = r.log.map((l) => `<div>R${l.round}: ${l.who === 'you' ? 'You' : esc(r.monster.name)} ${l.hit ? `hit${l.who === 'you' ? '' : 's you'} for <b>${l.damage}</b>` : '<span class="muted">miss' + (l.who === 'you' ? '' : 'es') + '</span>'} · you ${l.hpYou} HP · monster ${l.hpMonster} HP</div>`).join('');
   return `<h3>${r.won ? '✔ Level ' + r.depth + ' cleared' : '✖ Defeated on level ' + r.depth}</h3>
     <p>${esc(r.monster.name)}${r.monster.guardian ? ' <span class="pill gold">guardian</span>' : ''} · ${r.rounds} rounds · you lost <b>${r.hpLost}</b> HP${r.won ? ` (${r.hpLeft} left)` : ''}</p>
+    ${r.won && r.checkpoint ? `<p class="gold">🚩 Checkpoint! Level ${r.checkpoint} is saved: after the weekly reset you continue from here.</p>` : ''}
     ${r.won ? `<p class="good">+${r.xp} XP${r.levelsGained ? ' — LEVEL UP!' : ''}${r.drop ? ` · dropped <b>${esc(r.drop.name)}</b> (${fmt(r.drop.value)}g)` : ' · nothing dropped'}</p>` : '<p class="muted">You keep all XP and items. The run is over; this level is still to be beaten.</p>'}
     <details><summary class="muted">Round by round</summary><div class="log">${lines}</div></details>`;
 }
@@ -734,7 +744,8 @@ async function pageDungeon() {
   const m = d.monster, [threatText, threatCls] = THREAT[m.threat];
   const cd = until(d.cooldownUntil);
   const week = `resets in ${until(d.weekEndsAt) ?? 'a moment'}`;
-  const summary = `<p class="muted">This week (${week}): cleared <b>${d.cleared}</b> levels · ${d.kills} kills · ${d.deaths} deaths · ${d.runs} runs · +${d.xpWeek} XP · best ever <b>${d.bestEver}</b></p>`;
+  const summary = `<p class="muted">This week (${week}): cleared <b>${d.cleared}</b> levels · ${d.kills} kills · ${d.deaths} deaths · ${d.runs} runs · +${d.xpWeek} XP · best ever <b>${d.bestEver}</b></p>
+    <p class="muted">🚩 Checkpoint: ${d.checkpoint > 1 ? `you restart each week from level <b>${d.checkpoint}</b>` : 'none yet, every week starts on level 1'} · next one on level <b>${d.nextCheckpoint}</b> (every ${d.checkpointEvery} levels; you have to reach it to keep it)</p>`;
   const monsterCard = `<div class="row" style="align-items:flex-start">${img(`dungeon/${m.guardian ? 'guardian' : 'monster'}_${m.tier + 1}`, 'portrait')}
       <div><h2 style="border:0;margin:0">Level ${m.depth}${m.guardian ? ' <span class="pill gold">guardian</span>' : ''}</h2>
       <p style="margin:.2rem 0"><b>${esc(m.name)}</b> · <span class="${threatCls}">${threatText}</span></p>
@@ -751,7 +762,8 @@ async function pageDungeon() {
       <p style="margin-top:.8rem"><span class="muted">Dungeon HP (separate from your real HP, never regenerates here)</span></p>
       ${bar('hp', d.hp, d.maxHp, `${d.hp} / ${d.maxHp}`)}
       <p class="muted">You are dragged out if you do nothing for ${Math.round(d.idleLimit / 60000)} minutes (progress is kept): <b data-cd="${d.idleUntil}" data-refresh="1"></b></p>
-      <div class="row"><button data-do="/dungeon/fight" ${d.pending ? 'disabled' : ''}>⚔ Fight</button>
+      <div class="row"><button data-do="/dungeon/fight" ${d.pending || d.readyAt > now() ? 'disabled' : ''}>⚔ Fight</button>
+        ${d.readyAt > now() ? `<span class="muted">The next monster arrives in <b data-cd="${d.readyAt}" data-refresh="1">${until(d.readyAt) ?? ''}</b></span>` : ''}
         <button class="sec" data-do="/dungeon/leave" data-confirm="Leave the dungeon? Progress is saved, but you can only enter the dungeon once per day: the next run is possible in ${dur(d.cooldown)}.">🚪 Leave</button>
         ${d.pending ? '<span class="muted">Choose your reward first.</span>' : ''}</div>
       ${dungeonResult ? '<hr>' + fightHtml(dungeonResult) : ''}</div>`;
@@ -764,8 +776,10 @@ async function pageDungeon() {
         ${blocked ? '<span class="bad"> Finish or cancel your hunt / work first.</span>' : ''}</p>
       <ul class="muted"><li>You enter with a <b>full dungeon HP pool</b> equal to your max HP, independent of your real HP.</li>
         <li>One monster per level, stronger every level. Winning gives XP, a ${Math.round(d.dropChance * 100)}% drop chance and takes you one level deeper. Dungeon HP is <b>not restored</b> during a run.</li>
+        <li>${d.fightCooldown ? `After every victory the next monster needs <b>${dur(d.fightCooldown)}</b> to arrive, so a long run takes real time (you are locked inside meanwhile).` : 'Monsters come one after the other.'}</li>
         <li>Every ${d.milestone}th level is a guardian: beat it to choose one of three high value rewards.</li>
-        <li>Dying costs nothing (XP and items are kept) but ends the run. Progress is saved when you leave or die and <b>resets every Monday</b>.</li>
+        <li>Every ${d.checkpointEvery}th level is a <b>checkpoint</b>: if you reach it, the weekly reset sends you back there instead of level 1. Miss it and you start over.</li>
+        <li>Dying costs nothing (XP and items are kept) but ends the run. Progress is saved when you leave or die and <b>resets every Monday</b> (to your last checkpoint).</li>
         <li>While inside you cannot be raided and cannot raid, hunt or work. <b>One run per day:</b> after leaving or dying you can re-enter ${dur(d.cooldown)} later.</li></ul>
       ${dungeonResult ? '<hr>' + fightHtml(dungeonResult) : ''}</div>`;
   }

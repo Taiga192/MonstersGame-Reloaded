@@ -187,6 +187,6 @@ export function devDungeon(db: DB, playerId: number, now: number, o: { depth?: n
   dungeonState(db, playerId, now); // makes sure the row exists and the week is current
   if (o.depth != null) db.prepare('UPDATE dungeon SET depth = ?, reached_at = ?, best_ever = MAX(best_ever, ?) WHERE player_id = ?').run(Math.max(1, Math.floor(o.depth)), now, Math.max(0, Math.floor(o.depth) - 1), playerId);
   if (o.leave) { db.prepare('UPDATE dungeon SET active = 0 WHERE player_id = ?').run(playerId); db.prepare('UPDATE players SET dungeon_until = NULL WHERE id = ?').run(playerId); }
-  if (o.clearCooldown) db.prepare('UPDATE dungeon SET cooldown_until = 0 WHERE player_id = ?').run(playerId);
+  if (o.clearCooldown) db.prepare('UPDATE dungeon SET cooldown_until = 0, ready_at = 0 WHERE player_id = ?').run(playerId);
   return { message: `Dungeon${o.depth != null ? `: next level is now ${o.depth}` : ''}${o.clearCooldown ? ', cooldown cleared' : ''}${o.leave ? ', session ended' : ''}` };
 }

@@ -21,6 +21,7 @@ export const weekStart = (week: number) => week * WEEK_MS + 4 * DAY_MS;
 interface Row {
   player_id: number; week: number; depth: number; reached_at: number; active: number; hp: number; max_hp: number; last_at: number;
   cooldown_until: number; kills: number; deaths: number; runs: number; xp_week: number; pending: string | null; best_ever: number;
+  ready_at: number; checkpoint: number;
 }
 export interface RewardOption { name: string; value: number }
 export interface Monster { depth: number; name: string; guardian: boolean; stats: Stats; hp: number; xp: number }
@@ -72,10 +73,10 @@ function load(db: DB, id: number, now: number): Row {
 /** Monday rolled over: an unclaimed guardian reward is auto-claimed (best option), the week is archived, progress resets. */
 function rollWeek(db: DB, r: Row, now: number) {
   if (r.pending) { const best = (JSON.parse(r.pending) as RewardOption[]).sort((a, b) => b.value - a.value)[0]; addLoot(db, r.player_id, best.name, best.value, r.depth - 1, true, now); }
-  if (r.depth > 1) db.prepare('INSERT OR REPLACE INTO dungeon_weekly (week, player_id, depth) VALUES (?,?,?)').run(r.week, r.player_id, r.depth - 1);
+  if (r.kills > 0) db.prepare('INSERT OR REPLACE INTO dungeon_weekly (week, player_id, depth) VALUES (?,?,?)').run(r.week, r.player_id, r.depth - 1); // (only weeks that were played)
   db.prepare(
-    `UPDATE dungeon SET week = ?, depth = 1, reached_at = ?, active = 0, hp = 0, kills = 0, deaths = 0, runs = 0, xp_week = 0, pending = NULL WHERE player_id = ?`,
-  ).run(weekOf(now), now, r.player_id);
+    `UPDATE dungeon SET week = ?, depth = ?, reached_at = ?, active = 0, hp = 0, kills = 0, deaths = 0, runs = 0, xp_week = 0, pending = NULL, ready_at = 0 WHERE player_id = ?`,
+  ).run(weekOf(now), Math.max(1, r.checkpoint), now, r.player_id); // the new week starts at the last checkpoint reached (level 1 when there is none)
   db.prepare('UPDATE players SET dungeon_until = NULL WHERE id = ?').run(r.player_id);
 }
 
@@ -105,11 +106,11 @@ export function dungeonState(db: DB, id: number, now: number) {
   const idleUntil = r.active ? p.dungeon_until : null;
   return {
     week: r.week, weekEndsAt: weekStart(r.week + 1), depth: r.depth, cleared: r.depth - 1, bestEver: r.best_ever,
-    active: !!r.active, hp: r.hp, maxHp: r.max_hp, idleUntil, cooldownUntil: r.cooldown_until, canEnter: !r.active && now >= r.cooldown_until,
+    active: !!r.active, hp: r.hp, maxHp: r.max_hp, idleUntil, cooldownUntil: r.cooldown_until, readyAt: r.active ? r.ready_at : 0, checkpoint: r.checkpoint, checkpointEvery: CFG.dungeonCheckpoint, nextCheckpoint: (Math.floor(r.depth / CFG.dungeonCheckpoint) + 1) * CFG.dungeonCheckpoint, canEnter: !r.active && now >= r.cooldown_until,
     kills: r.kills, deaths: r.deaths, runs: r.runs, xpWeek: r.xp_week,
     pending: r.pending ? (JSON.parse(r.pending) as RewardOption[]) : null,
     monster: { depth: mon.depth, name: mon.name, guardian: mon.guardian, xp: mon.xp, tier: Math.min(9, tierOf(mon.depth)), threat: threat(power(mon.stats) / Math.max(1, power(mine))) },
-    dropChance: CFG.dungeonDropChance, cooldown: CFG.dungeonCooldown, idleLimit: CFG.dungeonIdleLimit, milestone: CFG.dungeonMilestone,
+    dropChance: CFG.dungeonDropChance, cooldown: CFG.dungeonCooldown, fightCooldown: CFG.dungeonFightCooldown, idleLimit: CFG.dungeonIdleLimit, milestone: CFG.dungeonMilestone,
     loot, lootValue: loot.reduce((s, l) => s + l.value, 0),
   };
 }
@@ -122,7 +123,7 @@ export function enterDungeon(db: DB, id: number, now: number) {
   assert(!r.active, 'in_dungeon', 'You are already inside the dungeon');
   assert(now >= r.cooldown_until, 'cooldown', `You can enter again in ${Math.ceil((r.cooldown_until - now) / 60000)} min`);
   // dungeon HP is separate from real HP: always a full pool, however hurt you are outside
-  db.prepare('UPDATE dungeon SET active = 1, hp = ?, max_hp = ?, last_at = ?, runs = runs + 1 WHERE player_id = ?').run(p.max_hp, p.max_hp, now, id);
+  db.prepare('UPDATE dungeon SET active = 1, hp = ?, max_hp = ?, last_at = ?, runs = runs + 1, ready_at = 0 WHERE player_id = ?').run(p.max_hp, p.max_hp, now, id);
   db.prepare('UPDATE players SET dungeon_until = ? WHERE id = ?').run(now + CFG.dungeonIdleLimit, id);
   return { hp: p.max_hp, depth: r.depth };
 }
@@ -138,6 +139,8 @@ export function leaveDungeon(db: DB, id: number, now: number) {
 export interface DungeonFightResult {
   won: boolean; died: boolean; depth: number; monster: { name: string; guardian: boolean }; hpLeft: number; hpLost: number; rounds: number; log: FightLog[];
   xp: number; levelsGained: number; drop: { name: string; value: number } | null; choice: RewardOption[] | null; nextDepth: number; cooldownUntil: number | null;
+  /** when the next fight is allowed (null after dying) */ readyAt: number | null;
+  /** a new checkpoint was reached with this victory */ checkpoint: number | null;
 }
 
 /** Fight the monster of the current level. Win: XP, maybe a drop, one level deeper. Lose: the run ends, nothing is lost. */
@@ -145,6 +148,7 @@ export function fight(db: DB, id: number, now: number, rng: Rng): DungeonFightRe
   const r = load(db, id, now);
   assert(r.active, 'not_in_dungeon', 'You are not inside the dungeon');
   assert(!r.pending, 'choose_reward', 'Choose your guardian reward first');
+  assert(now >= r.ready_at, 'fight_cooldown', `The next monster is not here yet: ${Math.ceil((r.ready_at - now) / 1000)} s`);
   const p = loadPlayer(db, id, now);
   const mon = monsterAt(r.depth);
   const res = fightMonster(battleStats(db, p, { ancestral: p.level >= CFG.ancestralMinLevel }), r.hp, r.max_hp, mon, rng);
@@ -154,7 +158,7 @@ export function fight(db: DB, id: number, now: number, rng: Rng): DungeonFightRe
     const cooldownUntil = now + CFG.dungeonCooldown;
     db.prepare('UPDATE dungeon SET active = 0, hp = 0, deaths = deaths + 1, cooldown_until = ? WHERE player_id = ?').run(cooldownUntil, id);
     db.prepare('UPDATE players SET dungeon_until = NULL WHERE id = ?').run(id);
-    return { ...base, won: false, died: true, hpLeft: 0, xp: 0, levelsGained: 0, drop: null, choice: null, nextDepth: r.depth, cooldownUntil };
+    return { ...base, won: false, died: true, hpLeft: 0, xp: 0, levelsGained: 0, drop: null, choice: null, nextDepth: r.depth, cooldownUntil, readyAt: null, checkpoint: null };
   }
 
   const xp = mon.xp;
@@ -176,12 +180,15 @@ export function fight(db: DB, id: number, now: number, rng: Rng): DungeonFightRe
     choice = opts;
   }
   const depth = r.depth + 1;
+  const every = Math.max(1, CFG.dungeonCheckpoint), reachedCheckpoint = Math.floor(depth / every) * every; // standing on level 25, 50, 75 ... saves it
+  const newCheckpoint = reachedCheckpoint >= every && reachedCheckpoint > r.checkpoint ? reachedCheckpoint : null;
+  const readyAt = now + CFG.dungeonFightCooldown;
   db.prepare(
-    `UPDATE dungeon SET depth = ?, reached_at = ?, hp = ?, last_at = ?, kills = kills + 1, xp_week = xp_week + ?, best_ever = MAX(best_ever, ?), pending = ? WHERE player_id = ?`,
-  ).run(depth, now, res.hpLeft, now, xpGained, depth - 1, choice ? JSON.stringify(choice) : null, id);
+    `UPDATE dungeon SET depth = ?, reached_at = ?, hp = ?, last_at = ?, kills = kills + 1, xp_week = xp_week + ?, best_ever = MAX(best_ever, ?), pending = ?, ready_at = ?, checkpoint = MAX(checkpoint, ?) WHERE player_id = ?`,
+  ).run(depth, now, res.hpLeft, now, xpGained, depth - 1, choice ? JSON.stringify(choice) : null, readyAt, newCheckpoint ?? r.checkpoint, id);
   db.prepare('UPDATE players SET dungeon_until = ? WHERE id = ?').run(now + CFG.dungeonIdleLimit, id); // activity keeps the run alive
   bump(db, id, 'dungeon_levels');
-  return { ...base, won: true, died: false, hpLeft: res.hpLeft, xp: xpGained, levelsGained: lv.levelsGained, drop, choice, nextDepth: depth, cooldownUntil: null };
+  return { ...base, won: true, died: false, hpLeft: res.hpLeft, xp: xpGained, levelsGained: lv.levelsGained, drop, choice, nextDepth: depth, cooldownUntil: null, readyAt, checkpoint: newCheckpoint };
 }
 
 /** Pick one of the guardian's rewards (allowed inside or outside the dungeon; the rest are gone). */

@@ -272,11 +272,11 @@ test('UI: gear is split into categories in store and inventory, with an equipped
 
     const names = () => [...doc.querySelectorAll('#view table td:first-child')].map((e) => e.textContent!.trim());
     const cats: [string, RegExp, RegExp][] = [
-      ['weapon', /^Blade/, /^(Plate|Hide|Health|Stat Ring)/], ['armor', /^(Plate|Hide)/, /^(Blade|Stat Ring|Health)/],
-      ['ring', /Ring/, /^(Blade|Plate|Health)/], ['amulet', /Amulet/, /^(Blade|Plate|Stat Ring)/], ['potion', /Potion/, /^(Blade|Plate|Amulet)/],
+      ['weapon', /^(Blade|Talon)/, /^(Plate|Hide|Gauntlet|Health|Stat Ring)/], ['armor', /^(Plate|Hide|Gauntlet)/, /^(Blade|Talon|Stat Ring|Health)/],
+      ['ring', /Ring/, /^(Blade|Plate|Health)/], ['amulet', /Amulet/, /^(Blade|Plate|Talon|Stat Ring)/], ['potion', /Potion/, /^(Blade|Plate|Amulet)/],
     ];
     for (const [cat, yes, no] of cats) {
-      await go(`#/town/store/${cat}`, 'Level');
+      await go(`#/town/store/${cat}${cat === 'amulet' ? '/all' : ''}`, 'Level'); // (all amulets need level 20+, so they start folded away)
       await until(() => doc.querySelector(`#view .tabs a.on[href$="/store/${cat}"]`) !== null, `${cat} tab active`);
       const n = names();
       assert.ok(n.length > 0 && n.every((x) => yes.test(x)) && !n.some((x) => no.test(x)), `${cat}: ${n.join(' | ')}`);
@@ -504,6 +504,15 @@ test('UI: the dungeon loop — enter, locks, fight, guardian reward choice, leav
     assert.match(toast(), /Level 9 cleared! \+\d+ XP/);
     assert.match(view().textContent!, /Level 10/);
     assert.match(view().textContent!, /guardian/i);
+    // the next monster needs 5 minutes: the button is locked and a countdown is shown; skipping time unlocks it
+    const fightBtn = () => [...doc.querySelectorAll('#view button')].find((b) => /Fight/.test(b.textContent!)) as HTMLButtonElement;
+    assert.ok(fightBtn().disabled, 'cannot fight again at once');
+    assert.match(view().textContent!, /next monster arrives in/i);
+    assert.ok(doc.querySelector('#view [data-cd]'), 'a countdown is shown');
+    assert.match(view().textContent!, /Checkpoint: none yet.*next one on level 25/);
+    await dev('[data-dev=skip][data-m="10"]');
+    await go('#/dungeon', 'never regenerates here');
+    assert.ok(!fightBtn().disabled, 'the next monster has arrived');
     click('#view button', 'Fight');
     await until(() => view().textContent!.includes('Guardian defeated'), 'guardian reward offered');
     const takes = [...doc.querySelectorAll<HTMLButtonElement>('#view button')].filter((b) => b.textContent!.includes('Take this'));
@@ -513,6 +522,8 @@ test('UI: the dungeon loop — enter, locks, fight, guardian reward choice, leav
     await until(() => !view().textContent!.includes('Guardian defeated'), 'reward taken');
     assert.match(toast(), /You take the .+ \(worth \d+g\)/);
 
+    await dev('[data-dev=skip][data-m="10"]'); // (the next monster needs its 5 minutes)
+    await go('#/dungeon', 'never regenerates here');
     click('#view button', 'Fight');
     await until(() => view().textContent!.includes('Level 11 cleared'), 'went on after the reward');
 

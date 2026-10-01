@@ -205,26 +205,31 @@ test('simulation invariants over 8 days: rules hold, world stays sane', () => {
   assert.deepEqual(botReport(db2, T0), r, 'the simulation is reproducible from the seed');
 });
 
-test('bots delve: enter, fight until they die, claim guardian rewards, sell loot, and are never left "inside"', () => {
+test('bots delve: enter, fight one level per wait, claim guardian rewards, sell loot, and a run always ends (they never sit inside forever)', () => {
   const db = openDb(), rng = seeded(41);
   ensureBots(db, 1, T0, rng);
   const id = one(db, 'SELECT player_id id FROM bots').id as number;
   db.prepare("UPDATE bots SET persona = 'brawler', tz = 12, sessions_left = 99").run();
-  set(db, id, 'level = 30, str = 400, def = 400, agi = 400, sta = 400, dex = 400, max_hp = 300, hp = 300, gold = 0');
-  let t = T0, guardianRewards = 0;
-  for (let i = 0; i < 80; i++) {
-    db.prepare('UPDATE bots SET next_at = ?').run(t - MIN); set(db, id, `hp = max_hp, hp_at = ${t}`);
+  set(db, id, 'level = 30, str = 90, def = 90, agi = 90, sta = 90, dex = 90, max_hp = 300, hp = 300, gold = 0');
+  let t = T0, wasInside = false, maxStreak = 0, streak = 0, guardianRewards = 0;
+  const inside = () => { const u = one(db, 'SELECT dungeon_until u FROM players WHERE id = ?', id).u; return u !== null && u > t; };
+  for (let i = 0; i < 6 * 288; i++) { // six days in 5-minute steps
+    set(db, id, `hp = max_hp, hp_at = ${t}`);
     tickBots(db, t, rng, { humans: false });
-    assert.equal(one(db, 'SELECT dungeon_until u FROM players WHERE id = ?', id).u === null || one(db, 'SELECT dungeon_until u FROM players WHERE id = ?', id).u <= t, true, 'a bot never stays inside between sessions');
-    t += 100 * MIN; // 80 sessions x 100 min = ~5.5 days: enough for several daily runs
+    if (inside()) { wasInside = true; streak++; maxStreak = Math.max(maxStreak, streak); } else streak = 0;
+    t += 5 * MIN;
   }
   const d = one(db, 'SELECT * FROM dungeon WHERE player_id = ?', id);
-  assert.ok(d.runs >= 3 && d.runs <= 6, `about one run per day over ~5 days: ${d.runs}`);
-  assert.ok(d.depth > 15 || d.best_ever > 15, `went deep: depth ${d.depth}, best ever ${d.best_ever}`);
-  assert.equal(d.pending, null, 'no guardian reward left unclaimed');
+  assert.ok(wasInside, 'the bot spent time inside');
+  assert.ok(maxStreak >= 6, `a run lasts many waits, not one visit (${maxStreak} steps in a row)`);
+  assert.ok(maxStreak < 6 * 288, 'but it always ends (dying), the bot is not stuck inside');
+  assert.ok(d.runs >= 3 && d.runs <= 6, `about one run per day over six days: ${d.runs}`);
+  assert.ok(d.best_ever > 15, `went deep: best ever ${d.best_ever}`);
+  assert.equal(d.pending === null || d.active === 1, true, 'no guardian reward left unclaimed outside a run');
   const soldOrHeld = one(db, 'SELECT COUNT(*) n FROM dungeon_loot WHERE player_id = ?', id).n as number;
-  assert.ok(soldOrHeld < 12, `loot is regularly sold to the dealer (${soldOrHeld} items held)`);
+  assert.ok(soldOrHeld < 14, `loot is regularly sold to the dealer (${soldOrHeld} items held)`);
   assert.ok(one(db, 'SELECT gold g FROM players WHERE id = ?', id).g > 0, 'earned gold from loot');
+  void guardianRewards;
 });
 
 test('a hunting or working bot does not enter the dungeon (one thing at a time)', () => {
@@ -245,7 +250,7 @@ test('dungeon world invariants over a simulated fortnight incl. two weekly wipes
   assert.equal(r.errors, 0);
   assert.ok(r.dungeon.delvers >= 30, `delvers ${JSON.stringify(r.dungeon)}`);
   assert.ok(r.dungeon.deepest >= 15 && r.dungeon.deepest < 200, `deepest ${r.dungeon.deepest}`);
-  assert.equal(r.dungeon.inside, 0);
+  assert.ok(r.dungeon.inside < 30, `a few bots may be in the middle of a run (they stay inside between fights), not half of them: ${r.dungeon.inside}`);
   assert.ok(one(db, 'SELECT COUNT(*) n FROM dungeon_weekly').n > 0, 'past weeks were archived by the weekly reset');
   assert.equal(one(db, 'SELECT COUNT(*) n FROM dungeon WHERE depth < 1 OR hp < 0 OR (active = 1 AND hp <= 0)').n, 0, 'no nonsense rows');
   assert.equal(one(db, 'SELECT COUNT(*) n FROM dungeon_loot WHERE value < 1').n, 0);

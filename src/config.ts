@@ -112,6 +112,8 @@ export const CFG = {
 
   // ---- dungeon (an addition that is not in the original game) ----
   dungeonCooldown: 24 * HOUR, // after leaving OR dying: ONE run per day (also stops "leave and re-enter to refill HP" and free retries)
+  dungeonFightCooldown: 2 * MIN, // after beating a monster you must wait before the next fight: stretches a run over time instead of over luck
+  dungeonCheckpoint: 25, // every 25th level is a checkpoint: reaching it keeps you there after the weekly reset
   dungeonIdleLimit: 30 * MIN, // an inactive run ends by itself (progress kept), so the dungeon is not a safe house from raids
   dungeonDropChance: 0.25,
   dungeonMilestone: 10, // every 10th level is a guardian; beating it lets you choose 1 of 3 valuable rewards
@@ -143,32 +145,52 @@ export interface ItemDef {
   potion?: 'heal' | 'stat' | 'maxhp';
 }
 
-function ladder(slot: ItemSlot, base: string, stat: Stat, n: number, prefix = 'itm'): ItemDef[] {
+/**
+ * A line of gear: one tier every 4 levels, so 25 tiers carry a character to level 97. Every line is its own equipment slot
+ * (the best usable item of each line is worn automatically), so a new line adds a new kind of equipment.
+ */
+function ladder(slot: ItemSlot, base: string, stat: Stat, n: number, o: { perTier?: number; priceMul?: number; prefix?: string } = {}): ItemDef[] {
+  const { perTier = 3, priceMul = 1, prefix = 'itm' } = o;
   return Array.from({ length: n }, (_, i) => {
     const tier = i + 1;
     return {
       key: `${prefix}_${base}_${tier}`, name: `${base} Mk ${tier}`, slot,
-      minLevel: 1 + i * 4, price: Math.round(30 * tier ** 2.2),
-      bonus: { [stat]: tier * 3 },
+      minLevel: 1 + i * 4, price: tierPrice(30 * priceMul, tier),
+      bonus: { [stat]: tier * perTier },
     };
   });
 }
 
+/**
+ * Price of tier t: steep early (a new tier every 4 levels costs 2-3 days of income), flatter later, because income grows roughly
+ * linearly with level (about 36 x level gold per day for an active character, measured with scripts/progress.ts) while a pure
+ * power curve would put the top tiers out of reach of anybody who gets raided.
+ */
+const tierPrice = (base: number, t: number, knee = 10, exp1 = 2.2, exp2 = 1.35) => Math.round(base * (t <= knee ? t ** exp1 : knee ** exp1 * (t / knee) ** exp2));
+const GEAR_TIERS = 25;
 export const ITEMS: ItemDef[] = [
-  ...ladder('weapon', 'Blade', 'str', 12),
-  ...ladder('armor', 'Plate', 'def', 12),
-  ...ladder('armor', 'Hide', 'sta', 12),
-  ...Array.from({ length: 6 }, (_, i): ItemDef => ({
+  ...ladder('weapon', 'Blade', 'str', GEAR_TIERS),
+  ...ladder('armor', 'Plate', 'def', GEAR_TIERS),
+  ...ladder('armor', 'Hide', 'sta', GEAR_TIERS),
+  ...ladder('weapon', 'Talon', 'agi', GEAR_TIERS, { perTier: 2, priceMul: 0.9 }), // quick weapons: Agility
+  ...ladder('armor', 'Gauntlet', 'dex', GEAR_TIERS, { perTier: 2, priceMul: 0.9 }), // Dexterity: finds prey and targets more easily
+  // rings: only the best ring of each kind counts
+  ...Array.from({ length: 14 }, (_, i): ItemDef => ({
     key: `ring_stat_${i + 1}`, name: `Stat Ring ${i + 1}`, slot: 'ring', ringKind: 'stat',
-    minLevel: 1 + i * 6, price: 200 * (i + 1) ** 2, bonus: { agi: (i + 1) * 2, dex: (i + 1) },
+    minLevel: 1 + i * 7, price: tierPrice(200, i + 1, 4, 2, 1.7), bonus: { agi: (i + 1) * 2, dex: (i + 1) },
   })),
-  ...Array.from({ length: 6 }, (_, i): ItemDef => ({
+  ...Array.from({ length: 12 }, (_, i): ItemDef => ({
     key: `ring_battle_${i + 1}`, name: `Plunder Ring ${i + 1}`, slot: 'ring', ringKind: 'battle',
-    minLevel: 1 + i * 6, price: 200 * (i + 1) ** 2, bonus: {}, goldBonus: 0.01 * (i + 1),
+    minLevel: 1 + i * 8, price: tierPrice(200, i + 1, 4, 2, 1.7), bonus: {}, goldBonus: 0.01 * (i + 1),
   })),
-  ...Array.from({ length: 6 }, (_, i): ItemDef => ({
+  ...Array.from({ length: 12 }, (_, i): ItemDef => ({
     key: `ring_hunt_${i + 1}`, name: `Tracker Ring ${i + 1}`, slot: 'ring', ringKind: 'hunt',
-    minLevel: 1 + i * 6, price: 200 * (i + 1) ** 2, bonus: {}, huntBonus: 10 * (i + 1),
+    minLevel: 1 + i * 8, price: tierPrice(200, i + 1, 4, 2, 1.7), bonus: {}, huntBonus: i < 6 ? 10 * (i + 1) : 60 + 5 * (i - 5),
+  })),
+  // amulets of might: a late-game amulet line (Strength and Defence together)
+  ...Array.from({ length: 6 }, (_, i): ItemDef => ({
+    key: `amulet_might_${i + 1}`, name: `Amulet of Might ${i + 1}`, slot: 'amulet', minLevel: 20 + i * 15, price: tierPrice(700, i + 1, 3, 2.2, 1.5),
+    bonus: { str: (i + 1) * 5, def: (i + 1) * 5 },
   })),
   { key: 'amulet_perfection', name: 'Amulet of Perfection', slot: 'amulet', minLevel: 30, price: 5000, bonus: {}, huntBonus: 9999 },
   { key: 'amulet_healing', name: 'Amulet of Healing', slot: 'amulet', minLevel: 30, price: 3000, bonus: {} },
@@ -183,12 +205,13 @@ const SENTINEL_NAMES = [
   'Skeleton', 'Zombie', 'Gargoyle', 'Imp', 'Banshee', 'Wraith', 'Harpy', 'Hellhound', 'Troll', 'Ogre',
   'Wyvern', 'Golem', 'Minotaur', 'Specter', 'Chimera', 'Basilisk', 'Manticore', 'Revenant', 'Wendigo', 'Lich',
   'Cerberus', 'Hydra', 'Juggernaut', 'Behemoth', 'Phantom', 'Djinn', 'Kraken', 'Leviathan', 'Dragon', 'Archdemon',
+  'Titan', 'Colossus', 'Nightmare', 'Horror', 'Abomination', 'Devourer', 'Overlord', 'World Eater',
 ];
 export const SENTINELS: SentinelDef[] = SENTINEL_NAMES.map((name, i) => {
   const t = i + 1;
   return {
-    key: `sen_${t}`, name, minLevel: t === 1 ? 5 : 5 + Math.floor(t * 2),
-    price: Math.round(50 * t ** 2.1), atk: t * 2 + 1, def: t * 2 + 1, sta: t * 2 + 1,
+    key: `sen_${t}`, name, minLevel: t === 1 ? 5 : Math.min(100, 5 + Math.floor(t * 2)),
+    price: tierPrice(50, t, 12, 2.1, 1.5), atk: t * 2 + 1, def: t * 2 + 1, sta: t * 2 + 1,
   };
 });
 export const SENTINEL_BY_KEY = new Map(SENTINELS.map((s) => [s.key, s]));

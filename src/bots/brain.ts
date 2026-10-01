@@ -8,7 +8,7 @@ import * as clan from '../game/clan.ts';
 import * as dungeon from '../game/dungeon.ts';
 import * as eco from '../game/economy.ts';
 import * as forum from '../game/forum.ts';
-import { battleStats, effectiveBonus, equipmentLoadout, isBusy, isHunting, isWorking, loadPlayer, ownedItems, type Player } from '../game/player.ts';
+import { battleStats, effectiveBonus, equipmentLoadout, isBusy, isHunting, isWorking, loadPlayer, ownedItems, type Player, isInDungeon } from '../game/player.ts';
 import { attack, searchOpponent } from '../game/raid.ts';
 import * as temple from '../game/temple.ts';
 import { warAttack, warOf } from '../game/war.ts';
@@ -52,13 +52,19 @@ export function runSession(ctx: Ctx, bot: BotRow): SessionResult {
   if (p.hunt_started && !isHunting(p, now)) { const r = attempt(() => eco.collectHunt(db, id, now, rng)); if (r) note(`hunt +${r.xp}xp +${r.gold}g`); }
   if (p.work_started && !isWorking(p, now)) { const r = attempt(() => eco.collectWork(db, id, now)); if (r) note(`work +${r.wages}g`); }
   p = loadPlayer(db, id, now);
+  if (isInDungeon(p, now)) { // a run in progress: one fight whenever the wait between fights is over; nothing else is possible while inside
+    const next = dungeonContinue(ctx, id, note);
+    if (next != null) return { nextAt: next, sessionsLeft: bot.sessions_left, actions };
+    p = loadPlayer(db, id, now);
+  }
   if (isBusy(p, now)) return { nextAt: Math.max(p.hunt_until ?? 0, p.work_until ?? 0) + randInt(rng, 1, 8) * MIN, sessionsLeft: bot.sessions_left, actions };
 
   // 2) maintenance and spending, then social life
   maintain(ctx, id, persona, note);
   social(ctx, id, persona, note);
   arenaTurn(ctx, id, persona, note);
-  dungeonTurn(ctx, id, persona, note);
+  const inside = dungeonTurn(ctx, id, persona, note);
+  if (inside != null) return { nextAt: inside, sessionsLeft: bot.sessions_left, actions }; // entered the dungeon: stays there until the run ends
 
   // 3) the main activity of this session
   let sessionsLeft = bot.sessions_left - 1;
@@ -113,7 +119,9 @@ function bestValues(db: DB, p: Player, persona: Persona) {
   return best;
 }
 /** Would this persona ever want this item? (amulets are only worth it for perfection-seeking hunters) */
-const wanted = (def: ItemDef, persona: Persona) => def.slot !== 'potion' && !(def.slot === 'amulet' && (def.key !== 'amulet_perfection' || persona.hunt < 0.8));
+const wanted = (def: ItemDef, persona: Persona) => def.slot !== 'potion' && (def.slot !== 'amulet' || amuletWanted(def, persona));
+/** amulet of mights (stat amulets) are for everybody; the Amulet of Perfection only pays off for dedicated hunters; the healing amulet has no effect worth buying */
+function amuletWanted(def: ItemDef, persona: Persona) { return def.key === 'amulet_perfection' ? persona.hunt >= 0.8 : Object.keys(def.bonus).length > 0; }
 /** What it would cost to get this item from the shop plus paying for its hardening levels: the ceiling for any fair market price. */
 const replacementCost = (def: ItemDef, hardening: number) => def.price + Array.from({ length: hardening }, (_, l) => CFG.hardenCost(def.price, l)).reduce((a, b) => a + b, 0);
 
@@ -123,17 +131,21 @@ function spend(ctx: Ctx, p0: Player, persona: Persona, note: (a: string) => void
   let budget = p.gold - 40 - Math.floor(p.gold * persona.save); // keep enough for a potion
   if (budget <= 0) return;
 
-  // gear: buy the single biggest upgrade we can afford (at most 65 % of the budget)
+  // gear: buy the biggest upgrade we can afford. When a much bigger one is within ~10 days of income but not yet affordable,
+  // save for it instead of spending everything on training (what a sensible player does; gear is far cheaper per point than training)
   const best = bestValues(db, p, persona);
-  let pick: { def: ItemDef; gain: number } | null = null;
+  const cands: { def: ItemDef; gain: number }[] = [];
   for (const def of ITEMS) {
-    if (def.slot === 'potion' || def.slot === 'amulet' && def.key !== 'amulet_perfection') continue;
-    if (def.minLevel > p.level || def.price > budget * 0.65) continue;
-    if (def.key === 'amulet_perfection' && persona.hunt < 0.8) continue;
+    if (def.slot === 'potion' || (def.slot === 'amulet' && !amuletWanted(def, persona)) || def.minLevel > p.level) continue;
     const gain = itemValue(def, persona) - (best.get(catKey(def)) ?? 0);
-    if (gain > 0 && (!pick || gain > pick.gain)) pick = { def, gain };
+    if (gain > 0) cands.push({ def, gain });
   }
-  if (pick && ok(() => eco.buyItem(db, p.id, pick!.def.key, now))) { budget -= pick.def.price; note(`buy ${pick.def.name}`); }
+  const byGain = (a: { gain: number }, b: { gain: number }) => b.gain - a.gain;
+  const goal = cands.filter((c) => c.def.price <= Math.max(600, p.level * 700)).sort(byGain)[0];
+  const affordable = cands.filter((c) => c.def.price <= budget * 0.9).sort(byGain)[0];
+  const pick = affordable && (!goal || affordable.gain >= goal.gain * 0.6) ? affordable : null;
+  if (pick && ok(() => eco.buyItem(db, p.id, pick.def.key, now))) { budget -= pick.def.price; note(`buy ${pick.def.name}`); }
+  else if (goal && !pick) { note(`saving for ${goal.def.name}`); budget = Math.floor(budget * 0.35); } // most of it is put aside, the rest still trains
 
   // sentinel: buy the best affordable one; upgrade (dismiss refunds the full price) when a clearly better one is affordable
   if (p.level >= CFG.sentinelMinLevel) {
@@ -251,7 +263,9 @@ function social(ctx: Ctx, id: number, persona: Persona, note: (a: string) => voi
 
   const c = db.prepare('SELECT * FROM clans WHERE id = ?').get(p.clan_id) as { id: number; leader_id: number; treasury: number; domicile_level: number; is_open: number } | undefined;
   if (!c) return;
-  if (p.gold > 1500 && rng() < 0.15) { const amt = Math.floor(p.gold * 0.1); if (ok(() => clan.donate(db, id, amt, now))) note(`donate ${amt}`); }
+  // donate only while the clan still needs money for its next domicile level (a treasury nobody can use is a gold black hole)
+  const upkeep = CFG.clanUpgradeCost(c.domicile_level);
+  if (p.gold > 1500 && c.treasury < upkeep && rng() < 0.15) { const amt = Math.min(Math.floor(p.gold * 0.1), upkeep - c.treasury); if (amt > 0 && ok(() => clan.donate(db, id, amt, now))) note(`donate ${amt}`); }
   if (c.leader_id !== id) return;
   leaderDuties(ctx, id, p, c, persona, note);
 }
@@ -395,27 +409,39 @@ function marketSell(ctx: Ctx, id: number, persona: Persona, note: (a: string) =>
 }
 
 // ---------------------------------------------------------------- dungeon
+const bestOption = (opts: { value: number }[]) => opts.reduce((bi, o, i) => (o.value > opts[bi].value ? i : bi), 0);
+const AFTER_WAIT = 20_000; // a bot looks again shortly after the wait between fights is over
+
 /**
- * A dungeon visit: claim a waiting guardian reward, sell loot to the relic dealer, then delve until dead (dying costs
- * nothing but the re-entry cooldown, so fighting on is always right). Progress is saved by the game itself.
+ * Keep delving: one fight whenever the wait between fights is over. Returns when this bot should look again, or null when it is
+ * no longer inside (it died). Dying costs nothing but the re-entry cooldown, so fighting on is always right.
  */
-function dungeonTurn(ctx: Ctx, id: number, persona: Persona, note: (a: string) => void) {
+function dungeonContinue(ctx: Ctx, id: number, note: (a: string) => void): number | null {
   const { db, now, rng } = ctx;
-  if (rng() > persona.dungeon) return;
-  const best = (opts: { value: number }[]) => opts.reduce((bi, o, i) => (o.value > opts[bi].value ? i : bi), 0);
   const st = dungeon.dungeonState(db, id, now);
-  if (st.pending && ok(() => dungeon.chooseReward(db, id, best(st.pending!), now))) note('guardian reward');
+  if (!st.active) return null;
+  if (st.pending) ok(() => dungeon.chooseReward(db, id, bestOption(st.pending!), now));
+  if (now < st.readyAt) return st.readyAt + AFTER_WAIT;
+  const r = attempt(() => dungeon.fight(db, id, now, rng));
+  if (!r) return now + 2 * MIN;
+  if (r.died) { note(`dungeon: died on ${r.depth}`); return null; }
+  if (r.checkpoint) note(`dungeon checkpoint ${r.checkpoint}`);
+  if (r.choice) ok(() => dungeon.chooseReward(db, id, bestOption(r.choice!), now));
+  return (r.readyAt ?? now) + AFTER_WAIT;
+}
+
+/**
+ * A dungeon visit: claim a waiting guardian reward, sell loot to the relic dealer, enter and fight the first monster.
+ * Returns when the bot should look again (it stays inside until it dies), or null when it did not go in.
+ */
+function dungeonTurn(ctx: Ctx, id: number, persona: Persona, note: (a: string) => void): number | null {
+  const { db, now, rng } = ctx;
+  if (rng() > persona.dungeon) return null;
+  const st = dungeon.dungeonState(db, id, now);
+  if (st.pending && ok(() => dungeon.chooseReward(db, id, bestOption(st.pending!), now))) note('guardian reward');
   const gold = loadPlayer(db, id, now).gold;
   if (st.loot.length && (st.lootValue >= 150 || st.loot.length >= 4 || gold < 100)) { const r = attempt(() => dungeon.sellLoot(db, id, 'all', now)); if (r) note(`sold loot +${r.gold}g`); }
-  if (!st.canEnter || !ok(() => dungeon.enterDungeon(db, id, now))) return;
-  let cleared = 0;
-  for (let i = 0; i < 150; i++) { // (safety cap; a run ends by death long before this for any realistic character)
-    const r = attempt(() => dungeon.fight(db, id, now, rng));
-    if (!r) return;
-    if (r.died) { note(`dungeon: ${cleared} levels, died on ${r.depth}`); return; }
-    cleared++;
-    if (r.choice) ok(() => dungeon.chooseReward(db, id, best(r.choice!), now));
-  }
-  ok(() => dungeon.leaveDungeon(db, id, now));
-  note(`dungeon: ${cleared} levels, left`);
+  if (!st.canEnter || !ok(() => dungeon.enterDungeon(db, id, now))) return null;
+  note('dungeon: entered');
+  return dungeonContinue(ctx, id, note);
 }

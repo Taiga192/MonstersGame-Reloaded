@@ -63,13 +63,16 @@ Delegable permissions: recruit, kick, war, treasury, forum (leader has all). Cla
 Private messages (2000 chars, 20/hour), system messages for arena/market/clan events. Highscores: level, raid wins, gold looted, hunter, gravedigger, arena season/all-time, clans; race filter; public profiles (no gold/HP/stats shown). [DOCUMENTED]
 
 ## Dungeon
-NEW, not in the original game. An endless ladder; see README. Rules: dungeon HP separate from real HP (full at entry, no regeneration); one monster per level with stronger stats every level; XP `3 + 0.4 x level` (guardians x3); 25 % drop chance of a loot item worth `15 + 4 x level^1.15` (x0.8-1.2); every 10th level a guardian with a 1-of-3 reward worth 4-8x an ordinary drop; death keeps XP and items; progress saved on leave/death and wiped every Monday 00:00 UTC (loot kept, an unclaimed guardian reward is auto-claimed); loot is sold to the relic dealer only outside the dungeon; inside you cannot be raided or do anything else; 24 hour re-entry cooldown after leaving or dying (one run per day, counted from leaving/dying; an idle-expired run counts from the last action); an idle run ends after 30 min. [DESIGN DECISION, numbers ASSUMED]
+NEW, not in the original game. An endless ladder; see README. Wait between fights: 2 minutes after every victory (`dungeonFightCooldown`). Checkpoints every 25 levels (`dungeonCheckpoint`): the weekly reset returns you to the highest one you reached. The weekly ladder only lists players who fought this week. Rules: dungeon HP separate from real HP (full at entry, no regeneration); one monster per level with stronger stats every level; XP `3 + 0.4 x level` (guardians x3); 25 % drop chance of a loot item worth `15 + 4 x level^1.15` (x0.8-1.2); every 10th level a guardian with a 1-of-3 reward worth 4-8x an ordinary drop; death keeps XP and items; progress saved on leave/death and wiped every Monday 00:00 UTC (loot kept, an unclaimed guardian reward is auto-claimed); loot is sold to the relic dealer only outside the dungeon; inside you cannot be raided or do anything else; 24 hour re-entry cooldown after leaving or dying (one run per day, counted from leaving/dying; an idle-expired run counts from the last action); an idle run ends after 30 min. [DESIGN DECISION, numbers ASSUMED]
 
 ## Premium / Blood Crystals
 Removed in this replica by design (no premium accounts, no crystals).
 
 ## World settings (admin page, not in the original game)
 Every rate and cooldown is a runtime setting (`src/settings.ts`). The XP multiplier applies to all XP, the gold multiplier to hunting, graveyard wages, the relic dealer and victim-link bites (never to gold taken from other players). Wipes reset characters to the start values and delete all other game data.
+
+## Equipment and balance
+Gear, prices, pacing targets and the measurements behind them are in [BALANCE.md](BALANCE.md).
 
 ## Build status
 See README milestones.

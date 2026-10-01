@@ -13,6 +13,7 @@ import { seeded, type Rng } from '../src/rng.ts';
 import { accomplishmentStatus } from '../src/game/accomplishments.ts';
 
 const T0 = Date.UTC(2027, 0, 13, 12, 0, 0); // a Wednesday, noon UTC
+CFG.dungeonFightCooldown = 0; // most tests fight many times at the same moment; the wait between fights has its own tests at the end
 const code = (fn: () => unknown) => { try { fn(); } catch (e) { return (e as GameError).code; } return 'none'; };
 const one = (db: DB, sql: string, ...a: any[]) => db.prepare(sql).get(...a) as any;
 /** true when an ordinary action is NOT refused because of the dungeon (other refusals, e.g. no gold, do not matter here) */
@@ -307,4 +308,96 @@ test('dev tool: set the depth and clear the cooldown', async () => {
   assert.equal(code(() => dungeon.enterDungeon(db, id, T0 + 2 * MIN)), 'cooldown');
   devDungeon(db, id, T0 + 2 * MIN, { depth: 40, clearCooldown: true });
   assert.equal(dungeon.enterDungeon(db, id, T0 + 2 * MIN).depth, 40);
+});
+
+// ---------------------------------------------------------------- wait between fights and checkpoints
+const withFightWait = <T>(ms: number, fn: () => T): T => { const old = CFG.dungeonFightCooldown; CFG.dungeonFightCooldown = ms; try { return fn(); } finally { CFG.dungeonFightCooldown = old; } };
+
+test('after beating a monster you wait 5 minutes for the next one; entering and dying are not delayed', () => withFightWait(5 * MIN, () => {
+  const { db, id, rng } = strong();
+  dungeon.enterDungeon(db, id, T0);
+  assert.equal(dungeon.dungeonState(db, id, T0).readyAt, 0, 'the first monster is right there');
+  const r1 = dungeon.fight(db, id, T0, rng);
+  assert.equal(r1.won, true); assert.equal(r1.readyAt, T0 + 5 * MIN);
+  assert.equal(dungeon.dungeonState(db, id, T0 + MIN).readyAt, T0 + 5 * MIN, 'the page can show a countdown');
+  assert.equal(code(() => dungeon.fight(db, id, T0 + MIN, rng)), 'fight_cooldown');
+  assert.equal(code(() => dungeon.fight(db, id, T0 + 5 * MIN - 1, rng)), 'fight_cooldown', 'not a second early');
+  assert.equal(dungeon.fight(db, id, T0 + 5 * MIN, rng).won, true, 'exactly on time');
+  assert.equal(dungeon.dungeonState(db, id, T0 + 5 * MIN).depth, 3);
+  // the run keeps going as long as you come back within the idle limit
+  let t = T0 + 5 * MIN;
+  for (let i = 0; i < 4; i++) { t += 5 * MIN; assert.equal(dungeon.fight(db, id, t, rng).won, true); }
+  assert.equal(dungeon.dungeonState(db, id, t).active, true);
+  // a new run starts without waiting
+  dungeon.leaveDungeon(db, id, t);
+  const later = t + DAY_MS + MIN;
+  dungeon.enterDungeon(db, id, later);
+  assert.equal(dungeon.fight(db, id, later, rng).won, true);
+}));
+
+test('dying needs no wait, and a character that is never fast enough still loses nothing', () => withFightWait(5 * MIN, () => {
+  const { db, id, rng } = weak();
+  dungeon.enterDungeon(db, id, T0);
+  const r = dungeon.fight(db, id, T0, rng);
+  assert.equal(r.died, true); assert.equal(r.readyAt, null);
+  assert.equal(dungeon.dungeonState(db, id, T0).active, false);
+}));
+
+test('the wait can be switched off (0) and has to stay shorter than the idle limit', () => {
+  const { db, id, rng } = strong();
+  dungeon.enterDungeon(db, id, T0);
+  for (let i = 0; i < 5; i++) assert.equal(dungeon.fight(db, id, T0, rng).won, true, 'no wait at 0');
+});
+
+test('checkpoints: standing on level 25 saves it for the next weeks; missing it means starting over', () => {
+  const { db, id, rng } = strong();
+  const wed = T0, nextMonday = Date.UTC(2027, 0, 18, 0, 5, 0), mondayAfter = nextMonday + 7 * DAY_MS, third = mondayAfter + 7 * DAY_MS;
+  const dive = (at: number, levels: number) => {
+    dungeon.enterDungeon(db, id, at); const cps: number[] = [];
+    for (let i = 0; i < levels; i++) { const r = dungeon.fight(db, id, at + (i + 1) * 1000, rng); if (r.checkpoint) cps.push(r.checkpoint); if (r.choice) dungeon.chooseReward(db, id, 0, at + (i + 1) * 1000 + 1); }
+    return cps;
+  };
+  // week 1: 23 levels cleared (standing on level 24): no checkpoint yet
+  assert.deepEqual(dive(wed, 23), []);
+  assert.equal(dungeon.dungeonState(db, id, wed + 30_000).checkpoint, 1);
+  dungeon.leaveDungeon(db, id, wed + 30_000);
+  assert.equal(dungeon.dungeonState(db, id, nextMonday).depth, 1, 'missed it: back to level 1');
+  // week 2: reach it (24 more levels = standing on level 25)
+  assert.deepEqual(dive(nextMonday + DAY_MS, 24), [25]);
+  const s = dungeon.dungeonState(db, id, nextMonday + DAY_MS + 60_000);
+  assert.equal(s.depth, 25); assert.equal(s.checkpoint, 25); assert.equal(s.nextCheckpoint, 50);
+  dungeon.leaveDungeon(db, id, nextMonday + DAY_MS + 60_000);
+  assert.equal(dungeon.dungeonState(db, id, mondayAfter).depth, 25, 'the new week starts on level 25');
+  assert.equal(dungeon.dungeonState(db, id, mondayAfter).bestEver, 24);
+  // week 3 is not played at all: the checkpoint is still there afterwards
+  assert.equal(dungeon.dungeonState(db, id, third).depth, 25);
+  assert.equal(dungeon.dungeonState(db, id, third + 7 * DAY_MS).depth, 25, 'an unplayed week does not lose it');
+  // later: go on to 50
+  const t4 = third + 7 * DAY_MS + DAY_MS;
+  assert.deepEqual(dive(t4, 25), [50]);
+  dungeon.leaveDungeon(db, id, t4 + 60_000);
+  assert.equal(dungeon.dungeonState(db, id, t4 + 7 * DAY_MS).depth, 50);
+});
+
+test('checkpoints do not make the weekly ladder or the weekly archive show weeks that were not played', () => {
+  const { db, id, rng } = strong();
+  db.prepare("INSERT INTO dungeon (player_id, week, reached_at, depth, checkpoint) VALUES (?, ?, ?, 50, 50)").run(id, dungeon.weekOf(T0) - 1, T0 - 8 * DAY_MS);
+  const s = dungeon.dungeonState(db, id, T0); // the roll over to this week happens here
+  assert.equal(s.depth, 50);
+  assert.equal(one(db, 'SELECT COUNT(*) n FROM dungeon_weekly').n, 0, 'nothing was played last week, so nothing is archived');
+  assert.equal(hs.highscore(db, { type: 'dungeon', page: 1, size: 25 }, T0).rows.length, 0, 'standing on level 50 is not a score before you fight');
+  dungeon.enterDungeon(db, id, T0); dungeon.fight(db, id, T0 + 1000, rng);
+  const board = hs.highscore(db, { type: 'dungeon', page: 1, size: 25 }, T0 + 2000).rows;
+  assert.equal(board.length, 1); assert.equal(board[0].value, 50, 'levels cleared counts from where you are');
+});
+
+test('the checkpoint distance is a setting', () => {
+  const { db, id, rng } = strong();
+  const old = CFG.dungeonCheckpoint; CFG.dungeonCheckpoint = 5;
+  try {
+    dungeon.enterDungeon(db, id, T0);
+    const cps: number[] = [];
+    for (let i = 0; i < 12; i++) { const r = dungeon.fight(db, id, T0 + (i + 1) * 1000, rng); if (r.checkpoint) cps.push(r.checkpoint); if (r.choice) dungeon.chooseReward(db, id, 0, T0 + (i + 1) * 1000 + 1); }
+    assert.deepEqual(cps, [5, 10]);
+  } finally { CFG.dungeonCheckpoint = old; }
 });
