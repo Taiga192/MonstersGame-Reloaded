@@ -1,150 +1,212 @@
 # MonstersGame-Reloaded
 
-Vampire-vs-Werewolf PvP browser RPG, rebuilt as a headless game server.
-Stack: TypeScript on Node ≥24 (native type stripping), built-in `node:sqlite`, Hono HTTP API. No native deps.
+A gothic browser RPG of **Vampires against Werewolves**: raid the enemy race, hunt, work, delve into a dungeon, join a clan and fight clan wars, all in one shared persistent world that is never empty.
 
-    npm install
-    npm start          # open http://localhost:3000 — playable UI. DB file: monsters.db (DB_PATH to change)
-    npm test           # node:test, in-memory SQLite, injected clock + seeded RNG
-    npm run test:wasm  # the same suite on SQLite-WebAssembly (the browser engine)
-    npm run typecheck
+MonstersGame-Reloaded is an independent, unofficial re-implementation of the classic browser game *MonstersGame*, with modern technology and a set of new mechanics: a dungeon, a skill board, weekly quests, an idle shrine, notifications and an admin console. It shares no code or assets with the original and is not affiliated with it.
 
-Rules and which numbers are documented vs. assumed: [docs/MECHANICS.md](docs/MECHANICS.md).
-All tunables live in `src/config.ts`. Game logic takes `now` and an `rng` as parameters, so everything is testable and replayable.
+- **Server-authoritative multiplayer.** One game server owns the world (SQLite), runs the rules and the bots. The browser is only a view.
+- **100 bots** play around the clock like ordinary players (hunting, raiding, trading, founding clans) so there is always someone to fight and trade with.
+- **Deterministic and tested.** All game logic takes the current time and a random source as parameters. Everything is covered by an automated test suite, and balance is checked with a reproducible simulation of the bot population.
+- **Runs three ways:** as a game server, with the frontend hosted elsewhere, or entirely inside the browser as a single-player build.
 
-## The dungeon (a new mechanic, not in the original game)
-An endless ladder of monsters. Details: [docs/MECHANICS.md](docs/MECHANICS.md#dungeon).
-- **Dungeon HP** is a separate pool, full on entry (= your max HP, whatever your real HP is) and **never regenerating** during a run.
-- Each level has one monster, stronger every level (`dungeonMonsterStat` in `src/config.ts`, tuned with `node scripts/dungeon-calibrate.ts`). Winning: XP (3 + 0.4 per level, a village pays 2), **25 % drop chance** of a valuable item, one level deeper. Every **10th level is a guardian**: beat it to choose 1 of 3 high value rewards.
-- **Dying costs nothing** (XP and items are kept) but ends the run. Progress is saved when you leave or die and **resets every Monday 00:00 UTC**; loot stays until sold to the **Relic Dealer** (Town). A weekly **Dungeon** highscore ranks levels cleared.
-- While inside you cannot be raided and cannot raid, hunt, work, shop or train.
-- **A wait between fights:** after beating a monster the next one needs **2 minutes** to arrive, so a run takes real time (and the character is locked inside meanwhile: no hunting, working or raiding). Both numbers are on the admin page.
-- **Checkpoints:** every **25th level** is a checkpoint. If you reach it (stand on level 25, 50, 75 ...), the weekly reset sends you back there instead of to level 1; if you did not reach it, you start over. A week without playing keeps your checkpoint.
-- **One run per day:** a **24 hour cooldown** after leaving or dying (which also means no leave-and-re-enter to refill HP and no free retries), and a run idle for **30 min ends by itself** (the dungeon is not a safe house from raids).
-- Bots delve too (fight until dead, claim guardian rewards, sell loot).
+> In this document **New** marks mechanics that do not exist in the original game, **Changed** marks original mechanics whose rules were modified, and unmarked mechanics follow the original.
 
-## Safety and limits (design decisions)
-- **Raid cooldown: 10 minutes.** A character that is **hunting, working or inside the dungeon can't be raided** (search, direct attack and clan-war roster all respect it; protection ends with the activity, or when a hunt is cancelled).
-- **Vitality Potions** give +10 max HP each but **at most +150 in total** (15 potions), so high level characters do not snowball. Potions already in your bag count against the cap and can't be bought or traded for beyond it.
+## Contents
+1. [The game](#the-game)
+2. [Mechanics](#mechanics)
+3. [Installation](#installation)
+4. [Running modes](#running-modes)
+5. [Administration](#administration)
+6. [Development](#development)
+7. [Documentation](#documentation)
 
-## Automatic bots
-100 bots play the game around the clock so the world is never empty (`BOTS=0` turns them off, `BOTS=250` for more). They are ordinary players (`is_bot = 1`, no password) and call exactly the same game services as a human's clicks, so they cannot cheat or break rules.
-- **Personas** (brawler 25, hunter 25, worker 15, clan leader 10, balanced 20, casual 5) differ in what they train, how often they raid, hunt or work, and how social they are.
-- **Behaviour:** short play sessions with gaps, a time zone each (they "sleep" at night), long hunts/graveyard shifts when they go away, otherwise simply logged out (and attackable). They train, buy gear/sentinels, harden weapons, upgrade hideouts, use the ancestral site, pick achievement sets, raid only opponents they can plausibly beat, found and join clans, recruit, accept applications, declare wars, make peace, take part in and create arena events, post on the clan forum, and **trade in the Blood Temple**: they list gear they have outgrown at a price between the shop's buy-back and the replacement cost (hardening included), reprice stale offers 15 % cheaper (sold to the shop once at the floor), and buy other players' listings (humans included) when the item is a real upgrade and clearly cheaper than the shop. Mail addressed to bots is dropped.
-- **Real players:** bots raid humans only `BOTS_HUMAN_RAID_CHANCE` (default 0.3) of the time they find one; `BOTS_RAID_HUMANS=0` leaves humans completely alone.
-- **They start like real players:** level 1, 5 in every attribute, 100 gold, no history. Their first sessions are spread over the first two hours, and everything they achieve happens in real time while the server runs.
-- **Tools:** Test tools → *Bot report / Bots act now / +10 bots*. `node scripts/simulate.ts [bots] [days] [seed]` prints a balance report from a reproducible virtual run on a throwaway in-memory database (a balance tool; the server never fast-forwards anything).
+---
 
-## Playing / testing
-Open http://localhost:3000, create a character, and use the **🛠 Test tools** box (bottom right; hidden when `NODE_ENV=production`):
-add gold, set your level, full heal, spawn bot opponents, fill your arena event / seed the market / send clan applicants / get mail, and **skip time** (cooldowns, HP regen, work shifts, 24h ancestral).
-`node scripts/balance.ts` prints combat win-rate statistics.
+## The game
 
-## Art assets
-`npm run assets` writes [docs/ASSETS.md](docs/ASSETS.md) (art bible, exact filenames, sizes, ready-to-paste prompts, done-checklist) and `docs/assets-manifest.json`, and prints progress (`-- --missing` lists every missing file).
-Drop an image at `public/assets/<id>.<png|jpg|webp|svg>` (e.g. `public/assets/items/itm_Blade_1.png`) and reload the page: it appears automatically. Missing images just keep the text/emoji fallback, so you can add art gradually.
+You create a vampire or a werewolf. Training your five attributes, equipping gear and growing a hideout make you stronger; raids against the opposite race take gold and give XP; hunting and graveyard work are your safe income. Level by level you earn skill points, join a clan, enter the arena, climb the dungeon and trade in the player market. Only one timed activity runs at a time: while you hunt, work or delve, you cannot be raided, and you cannot do anything else.
 
-### Importing generated art
-`npm run art -- <image> <number|id>` (e.g. `npm run art -- ~/Downloads/logo.jpg 001`) or drop several files into `art-inbox/` named `001.jpg`, `002-anything.png` or `brand__logo.png` and run `npm run art -- --dir art-inbox`.
-Transparent assets (icons, badges, logos): the flat background colour (magenta) is detected and keyed out with edge matting/despill, the Gemini sparkle is removed, the image is trimmed and fitted to the manifest size, saved as `public/assets/<id>.png`. Full-bleed assets (banners, backdrops, tiles): the sparkle corner is trimmed, the image is cropped to the exact aspect ratio and saved as `.jpg`. Originals are kept in `art-src/`. Needs ImageMagick (`magick`). Then `npm run assets` shows your progress.
+There is **no premium currency and no pay-to-win**: every feature of the original that was sold for real money was removed, and every convenience (such as the idle shrine) is deliberately weaker than playing by hand.
 
-## Three ways to run it
-| | Multiplayer | Bots | Where the save lives | How |
-|---|---|---|---|---|
-| **Game server** (recommended) | **yes**, everybody shares one world | 24/7 | on the server (SQLite file + automatic backups) | `npm start`, or Docker: see [docs/DEPLOY.md](docs/DEPLOY.md) |
-| **Frontend elsewhere** (itch.io, GitHub Pages) + your server | yes | 24/7 | on the server | `npm run build:online -- --api https://your-server` |
-| **Browser-only** (GitHub Pages, no server) | no, single player | only while the tab is open | in the browser (can be lost when site data is cleared; export it) | `npm run build:pages` |
+## Mechanics
 
-A static site (GitHub Pages, itch.io) can never hold the database or run the bots, and database credentials must never be shipped in a frontend config file; so a shared game always needs the game server. All three run the same rules and the same SQL.
+### Core mechanics (from the original game)
 
-**Public server essentials** (details in [docs/DEPLOY.md](docs/DEPLOY.md)): `NODE_ENV=production` (no cheat tools), `CORS_ORIGINS` for a separately hosted frontend, `TRUST_PROXY=1` behind a proxy, rate limits on register/login, 100 KB request limit, sessions expire after 90 days and logout is real, automatic backups every 6 h plus a final one on shutdown, run exactly one instance. `npm run e2e:online` proves it in real Firefox: separate origins (CORS), progress survives clearing all browser data and a server restart, players share one world.
+| Mechanic | How it works |
+|---|---|
+| **Races** | Vampire or werewolf. You can only raid the other race; clans are single-race. |
+| **Attributes** | Strength, Defence, Agility, Stamina and Dexterity, 5 each at the start. Training costs `value² − 5` gold. Combat is decided by hit chance (Agility vs Defence) and damage (Strength vs Stamina). |
+| **Health** | +10 HP per hour. A fight is lost below 10 HP; below 25 HP you can neither attack nor be attacked. Potions heal, boost stats for an hour, or add permanent max HP. |
+| **Raids (PvP)** | Search an opponent (Dexterity against their hideout), then attack. The winner takes 5–10 % of the loser's gold; one attack per opponent per 12 h; 1 h protection after being attacked; battle reports for both. |
+| **Victim link** | Anyone can bite your link for 1–3 gold. A recruited player who reaches level 3 pays a recruit bonus. |
+| **Hideout** | Four upgradeable parts (surroundings, path, wall, building) that add defence at home and make you harder to find. |
+| **Store and inventory** | Weapons, armour, rings, amulets and potions. The best usable item of each kind is worn automatically. Items sell back at 50 %. |
+| **Sentinels** | Guardian creatures from level 5 that add attack, defence and stamina; trainable; 48 kinds. |
+| **Ancestral Site** | From level 20: a daily challenge with an escalating fee that teaches ancestral skills (permanent attribute bonuses, four per race). |
+| **Clans** | Founded at level 3. Domicile levels (paid from the treasury) add member slots; delegable permissions (recruit, kick, war, treasury, forum); open or application-only; a clan forum. |
+| **Clan wars** | At least five attackers; the roster is fixed at declaration; four attacks per opponent per 12 h; a war room that picks a random enemy of your skill level; peace, ceasefire or capitulation. |
+| **Arena** | From level 5: duels and tournaments of 4, 8 or 16. The creator sets skill band, entry fee and which bonuses count; stats are frozen at registration; events start at 21:00 UTC; arena points decay daily; ten ranks; monthly seasons with titles. |
+| **Accomplishments** | 12 achievements with five tiers each, earned from lifetime counters. Up to five sets of five; one active set grants bonuses. |
+| **Mail and highscores** | Private mail and system messages; highscores for level, raid wins, gold looted, hunting, graveyard, arena, clans and the weekly dungeon, with race filter and public profiles. |
 
-## Browser-only version (GitHub Pages, single player)
-GitHub Pages can only host static files, so there is no server and no database server. This version therefore runs **the whole game inside the player's browser**: the same rules, the same SQLite schema and SQL, and the bots, in a Web Worker. The database is SQLite compiled to WebAssembly, stored in the browser's private file system (OPFS) and saved after every action. It is a **single-player world**: it contains you and the bots, and other people cannot join it (each visitor gets their own world).
+### Changed mechanics
 
-**Deploy**
-1. Create a GitHub repository and push this project to the `main` branch.
-2. In the repository: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
-3. The workflow in `.github/workflows/pages.yml` type-checks, runs the tests (on node:sqlite **and** on SQLite-WebAssembly), builds and publishes the site to `https://<user>.github.io/<repo>/`.
+| Mechanic | What is different |
+|---|---|
+| **Hunting** (Changed) | A real-time activity in 10-minute portions with a budget of **3 hours per day**. Each portion hits a village (50 %), a small town (35 %, +100 % reward) or a large town (15 %, +250 %). The character is locked while hunting and can cancel for a pro-rata payout. |
+| **Graveyard work** (Changed) | Shifts of up to **48 hours**, locked against everything else; quitting early pays pro rata. |
+| **Raid cooldown and safety** (Changed) | A 10-minute cooldown for everybody. A character that is hunting, working or inside the dungeon cannot be found or attacked (also in clan wars). |
+| **Blood Temple** (Changed) | A **player-to-player market** (5 % fee, 7-day listings, hardening travels with the item) instead of the original blood-crystal shop. Weapon hardening costs gold: +2 Strength per level, up to +10. |
+| **Vitality Potions** (Changed) | +10 max HP each, but at most **+150 in total** from potions, so high levels do not snowball. |
+| **One thing at a time** (Changed) | Hunting, working and the dungeon exclude each other and everything else. |
+| **Premium** (Removed) | No premium accounts, no blood crystals. |
+| **Gear to level 100** (Changed) | Five gear lines of 25 tiers (Blade, Plate, Hide, Talon, Gauntlet), 14 Stat Rings, 12 Plunder Rings, 12 Tracker Rings, Amulets of Might and 48 sentinels, with a price curve that stays reachable for characters that are raided. |
 
-**Locally:** `npm run build:pages && npm run preview` then open http://localhost:8080/MonstersGame/ (served from a sub-path without special headers, like GitHub Pages). `npm run e2e` drives the built site in real Firefox: register, play, reload (persistence), a second tab, export / reset / import.
+### New mechanics
 
-**Things to know**
-- **Saves:** live in the browser on that device. The *Game* page (top menu) has *Export save* / *Import save* (a plain SQLite file, also the way to move to another browser or device), *Delete save*, and asks the browser not to evict the data. Clearing site data deletes the save.
-- **One tab at a time:** the database can be open in one tab; a second tab shows a clear message.
-- **Bots** only play while the game is open (like the Node server only plays while it is running). Number of bots, and whether they may raid you, are set on the *Game* page.
-- **Browsers:** current Chrome, Edge, Firefox (111+) and Safari (16.4+). In private/incognito windows the browser may refuse persistent storage; the game then warns that progress is not saved.
-- **Test tools** (cheats, time skip) are hidden on the public site; enable them on the *Game* page.
-- **Two ways to run the same game:** `npm start` = Node server (`config.js`: `MG_LOCAL = false`, accounts, real multiplayer possible); `npm run build:pages` = browser-only (`MG_LOCAL = true`). The rules live in `src/game/`, `src/bots/` and `src/api.ts` and run unchanged in both; only the database opener differs (`src/db.ts` = node:sqlite, `src/browser/` = WebAssembly).
+#### The dungeon (New)
+An endless ladder of monsters, stronger on every level.
+- **Separate dungeon health:** full on entry (equal to your max HP) and **never regenerating** during a run. Dying costs nothing, but ends the run.
+- **Rewards:** XP that grows with depth, a 25 % chance of a valuable drop, and every 10th level is a **guardian** whose defeat lets you choose one of three high-value rewards. Loot is sold to the **Relic Dealer**.
+- **Pace:** after each victory the next monster needs **2 minutes**; one run per day (24-hour cooldown after leaving or dying); an idle run ends itself after 30 minutes. While inside you cannot be raided and cannot do anything else.
+- **Checkpoints:** every **25th level** you reach is kept across the weekly reset (Monday 00:00 UTC), which otherwise sends you back to level 1.
+- A weekly **Dungeon highscore** ranks levels cleared by players who fought that week.
 
-## Layout
-- `public/` – frontend (vanilla JS, no build). `test/ui.test.ts` drives it in jsdom against the real API
-- `src/db-core.ts` – browser-safe DB interface, schema, migrations, transactions. `src/db.ts` – node:sqlite opener. `src/browser/` – WebAssembly DB adapter, engine Web Worker, crypto shim. `src/node-app.ts` – API + static files for the Node server, `src/security.ts` – CORS, rate limits, size limit, `src/backup.ts` – database snapshots
-- `src/game/` – services: `auth`, `player` (stats/xp/hp), `combat` (pure), `raid`, `economy` (train/store/sentinels/hideout/hunt/work/ancestral), `clan`, `forum`, `arena`, `accomplishments`, `temple`, `mail`, `highscore`
-- `src/api.ts` – REST routes (Bearer token); every action runs in one SQLite transaction
-- `src/db.ts` – schema + `tx()`
+#### The skill board (New)
+Every level gives **1 skill point**, spent on a **board of 308 nodes** (pan and zoom, hover for details, **double-click to learn**).
+- **Seven regions**, each with a start node (your class), three arms of ten nodes and a keystone: **Hunter**, **Warrior**, **Shadow**, **Delver**, **Warden**, **Artisan**, **Acolyte**. Hubs and **arcs between neighbouring regions** (plain attribute nodes with a notable in the middle) let a build cross over.
+- The first point goes on a start node; every later node has to touch one you own.
+- **Costs:** start and small nodes 1 point, **notables 2**, **keystones 3**. The whole board costs about 400 points, so even a level-100 character can afford only a quarter: builds are real choices.
+- **Keystones** are huge bonuses with a drawback (for example *Lone Wolf*: +15 % hunting gold and XP, but you lose 20 % more gold when raided).
+- Effects cover attributes, health, hunting, wages, raids, the dungeon, XP and gold, prices, the Blood Temple fee, the Ancestral Site and the shrine.
+- Taking a node back costs gold (10 per level, only at the end of a branch); resetting the whole board costs 50 gold per level.
 
-## Status
-- [x] Accounts, race, attributes, training, lazy HP regen, XP/levels, recruit bonus
-- [x] Raids: search (dex vs hideout), cooldowns, protection, 12h same-opponent rule, gold steal, battle reports
-- [x] Store, inventory, potions, rings, amulets; sentinels; hideout; hunts; victim-link bites; graveyard work (cancel = pro-rata pay)
-- [x] Ancestral site; clans, domicile, wars (snapshot, 4 attacks/12h, peace/ceasefire/capitulation)
-- [x] Design decisions: no premium/blood crystals; one timed activity at a time (work or hunt); hunts 3 h/day; work shifts up to 48 h
-- [x] Arena: duels/tournaments (4/8/16), skill bands, escrowed fees, snapshots, 9 PM start, points + daily decay, 10 ranks, 30-day moon trend, monthly seasons + titles
-- [x] Accomplishments: 12 auto-earned, 5 tiers each, 5 sets of 5, one active set gives bonuses
-- [x] Blood Temple (player market, 5% fee) and weapon hardening (gold, +2 STR/level, max +10)
-- [x] Clan admin permissions (recruit/kick/war/treasury/forum), applications, forum (pin/lock/moderate); private mail; highscore variants + public profiles
-- [x] Frontend + test tools
-- [x] Dungeon (weekly ladder, guardians, loot, relic dealer, bots delve)
-- [x] Automatic bots (personas, clans, wars, arena, market, dungeon; they start from zero)
-- [ ] Balance pass against real-game data
+#### Weekly quests (New)
+A pool of **105 quests** (35 kinds in three difficulties). Every Monday **10 are drawn** (4 easy, 4 normal, 2 hard), the same for everybody and different every week: never two of the same kind, at least six a new character can do, at most three that depend on luck. Nothing is daily, so a week can be planned.
+- Progress counts from Monday on. Targets about gold or XP scale with your level.
+- A finished quest lets you **choose one of three rewards that grow with your level**: gold, XP, or a special reward (animal blood, health potions or dungeon loot). Unclaimed rewards expire on Monday.
 
-## Notifications (you should never have to search for them)
-- A **bell with a number** in the header, and an **alert bar** under it that stays visible while you scroll. The bar shows what needs you right now, worked out from your character (a finished hunt or shift, unspent skill points, finished quests, unread mail, a dungeon guardian reward, an empty shrine) plus a chip for unread notifications. Chips are links.
-- **Notifications** tell you what happened while you were away: raids against you (also the ones you won), market sales, arena results, war declared or ended, being removed from a clan, level-ups, mail from players, announcements, new quests, the shrine running out of blood. The bell opens a list; clicking an item opens its page and marks it read. Full list: `#/notifications` (last 100 are kept).
-- The page asks the server every 20 seconds (and when you come back to the tab); new events pop up as toasts, the bell rings, and the browser tab title shows `(3)`. Optionally also **desktop notifications** while the tab is in the background (opt-in on the notifications page; a closed browser cannot be reached, there is no push service).
+#### The shrine, idle PvE (New)
+For players who cannot be online all day. Unlocked at **level 10**, the shrine runs a **routine** of hunting, work and (with an Idol of the Hunt) dungeon runs while you are away, **always clearly weaker than playing by hand**: 60 % of the pay, 75 % at best.
+- **Animal blood** is the fuel. Every manual action gathers some on the way; automated hours burn it. The tank size also caps how long the shrine can run unattended.
+- **Parts** raise efficiency by 2.5 % each: Blood Chalice (tank), Bone Altar (routine steps), Idol of the Hunt (dungeon automation, then more blood). Tier I is sold in the shop for everybody; tier II is found in large towns and from dungeon guardians, or bought from other players.
+- The usual daily limits apply. While it runs you have **no protection** from raids, but a raid takes at most 3 % of your gold. Any manual activity pauses it. Nothing can be bought with real money.
 
-## Weekly quests (a new mechanic)
-- A pool of **105 quests** (35 kinds x easy / normal / hard); every Monday **10 are drawn** (4 easy, 4 normal, 2 hard): never two of the same kind, at least 6 that a brand-new character can do, at most 3 that depend on luck (a clan war, a bite on your victim link). The draw is the same for everybody and different every week. Nothing is daily: you can plan the whole week.
-- Progress counts from Monday on, whatever you did before. Targets that are about gold or XP are scaled to your level the first time you look at the week.
-- A finished quest lets you **choose one of three rewards, which grow with your level**: gold, XP, or a special reward (animal blood, health potions or dungeon loot, depending on the kind of quest). Unclaimed rewards are gone on Monday.
-- Admin page: how many quests per week and a multiplier for all rewards.
+#### Notifications (New)
+- A **bell with a counter** in the header and an **alert bar** that stays visible while you scroll. The bar lists what needs you right now (a finished hunt or shift, unspent skill points, finished quests, unread mail, a guardian reward, an empty shrine); chips are links.
+- **Notifications** report what happened while you were away: raids against you, market sales, arena results, war declared or ended, clan removal, level-ups, mail, announcements, new quests.
+- The page checks every 20 seconds; new events appear as toasts, the bell rings and the tab title shows a count. Desktop notifications are opt-in.
 
-## The skill board (a new mechanic)
-Every level gives **1 skill point** (a node costs 1-3 points, see below), spent on a board of **308 nodes** (Skills in the menu; pan with the mouse, zoom with the wheel).
-- **Seven regions**, each with its own start node (your **class**), three arms of ten nodes and a keystone at the tip: **Hunter** (hunting gold/XP, fewer failed hunts), **Warrior** (strength, raid plunder, health), **Shadow** (agility, short raid cooldown), **Delver** (dungeon XP, loot, health), **Warden** (defence, health, regeneration, keeping your gold), **Artisan** (wages, cheaper shop and training, better selling), **Acolyte** (shrine: more blood, less fuel).
-- The **first point has to go on a start node**. After that you can only take nodes that touch one you already have; hubs in the middle and **three arcs between every two neighbouring regions** (inner, middle and outer ring, filled with plain attribute nodes and a notable in the middle) let a build cross over into other regions instead of walking straight out.
-- **Costs:** start nodes and small nodes cost **1 point**, **notables (the middle nodes) 2**, **keystones 3**. The whole board costs about 400 points, so even at level 100 a character can afford only a quarter of it: builds are real choices.
-- **Double-click** a node to learn it; hovering shows what it does, what it costs and whether you can take it.
-- **Small nodes** are +1-2 %, **notables** are the big upgrades (+4-8 %), the **keystone** of a region is a huge bonus **with a drawback** (for example Lone Wolf: +15 % hunting gold and XP, but you lose 20 % more gold when raided).
-- The shrine is in the main menu (Shrine), not in the Town.
-- Effects cover attributes (flat and %), health and regeneration, hunting, wages, raids, the dungeon, XP and gold, shop/selling/training/hardening prices, the Blood Temple fee, the Ancestral Site and the shrine.
-- Taking **one node back** costs 10 gold per level (only at the end of a branch, the rest has to stay connected); **resetting the board** costs 50 gold per level and returns every point. Points per level and both prices are on the admin page.
+#### Automatic bots (New)
+100 bots (configurable) play like real players, using exactly the same game services as a human's clicks, so they cannot cheat or break rules. They start at level 1 with no history; everything happens in real time while the server runs.
+- **Personas** (brawler, hunter, worker, clan leader, balanced, casual) differ in training, raiding, working, trading and social behaviour.
+- They keep a daily rhythm (they "sleep" at night), hunt, work, delve, trade in the Blood Temple, found and join clans, fight clan wars, spend skill points along a plan and claim quests.
+- They raid real players only a fraction of the time they find one (`BOTS_HUMAN_RAID_CHANCE`), or never (`BOTS_RAID_HUMANS=0`).
 
-## The shrine (idle PvE, a new mechanic)
-For players who cannot be online all day: the shrine hunts, works and delves for you while you are away, **always clearly weaker than playing by hand** (60 % of the pay, 75 % at best) and with **nothing that can be bought with real money**.
-- **Unlocked at level 10** (Town -> Shrine, 1,500 gold from the NPC shop). It runs a **routine** of up to 3 steps (more with a Bone Altar): "hunt 6 portions", "work 4 hours", and, with an Idol of the Hunt, "dungeon run (up to 30 fights)".
-- **Animal blood** is the fuel. Every manual action gathers some on the way (a hunt portion, a work hour, a raid, a dungeon fight: 1 each). An automated hour burns 1. So playing a little funds a lot of automation. The tank holds 60 blood (60 hours of running, which is also the longest it can run unattended).
-- **Parts** (Town -> Store -> Shrine parts, and found while playing): Blood Chalice (bigger tank), Bone Altar (more routine steps), Idol of the Hunt (I: dungeon automation, II: +50 % blood gathered). Tier I costs 800 gold in the shop for everybody; tier II is **not sold**: it is found in large towns while hunting and when dungeon guardians fall, or bought from other players in the Blood Temple. Every installed tier adds **+2.5 % efficiency** (60 % -> 75 % with all six).
-- The usual limits stay: 3 hours of hunting a day (shared with manual hunting), one dungeon run a day. A dungeon run is all or nothing (paused = cancelled).
-- **No protection while it runs:** an automated player can be raided, but a raid takes at most **3 %** of their gold.
-- Hunting, working, raiding or entering the dungeon by hand **pauses** it (the step in progress is paid pro rata, unused blood comes back); shopping, mail, clan and the market do not.
-- Nothing runs in the background: the server works out what the shrine did when you come back (or when anything asks for your numbers), like hunts and shifts.
-- Every number is on the admin page (Shrine group).
+#### Administration (New)
+An **Admin** page with live-tunable rates (XP, gold, level curve), more than 80 cooldowns and limits, presets (including a **speed server**), a **world wipe** for seasons, player editing, announcements and an audit log. See [Administration](#administration).
 
-## Admin page (rates, cooldowns, wipes, speed servers)
-An **Admin** entry appears in the menu for admins. There you can change, without touching code and effective immediately:
-* **Rates:** an XP multiplier, a gold multiplier (hunting, graveyard work, relic dealer, bites; gold taken from other players is not multiplied) and the XP needed per level.
-* **Every cooldown and limit:** raid cooldown, protection, hunt portion and daily hunting time, work shift length, Ancestral Site, dungeon, arena, plus combat, progression, economy and clan numbers (about 60 settings, each with safe limits).
-* **Presets:** Normal, Double XP/gold, Speed server (5x with short cooldowns) in one click.
-* **Wipe the world:** keep all accounts and reset their characters, or keep only admin accounts. Clans, market, mail, battles, bots and so on are deleted and fresh bots start from level 1. Settings and the audit log survive.
-* **Players:** search, edit level / gold / attributes / health, give items, release a stuck character, reset a password, make admin, delete.
-* **Announcement** mail to everyone, and a **log** of everything admins did.
+---
 
-**Who is an admin?** Single player (browser build): you, always. Multiplayer server: only players with the admin flag, which you set by hand on the server, so nobody can promote themselves:
+## Installation
+
+**Requirements:** Node.js **24 or newer** (native TypeScript and `node:sqlite`; no native dependencies, no build step for the server).
+
 ```bash
-node scripts/admin.ts /data/monsters.db grant MyName      # Docker: docker compose exec game node scripts/admin.ts /data/monsters.db grant MyName
+git clone <repository-url> monstersgame-reloaded
+cd monstersgame-reloaded
+npm ci
+npm start            # http://localhost:3000
+```
+
+Open the address, register, and play. The database is a single file (`monsters.db` in the working directory, set with `DB_PATH`); 100 bots start playing immediately. In development a **Test tools** box (bottom right) lets you add gold, set your level, skip time and spawn opponents; it is switched off when `NODE_ENV=production`.
+
+### Configuration
+The server is configured with environment variables:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `PORT` / `HOST` | `3000` / `127.0.0.1` | Listening port and address (keep it local behind a reverse proxy). |
+| `DB_PATH` | `monsters.db` | The database file: the only state that has to survive. |
+| `BOTS` | `100` | Number of bots (`0` = none). |
+| `NODE_ENV` | | `production` switches the test tools off. |
+| `CORS_ORIGINS` | empty | Sites allowed to call the API (for a separately hosted frontend). |
+| `TRUST_PROXY` | off | `1` behind exactly one reverse proxy. |
+| `REGISTRATION_CODE` | empty | If set, registering needs this code (private servers). |
+
+More (rate limits, bot options, backups) are in [docs/DEPLOY.md](docs/DEPLOY.md). Game numbers (rates, cooldowns, prices of skill nodes, shrine, quests ...) are **not** environment variables: they are changed live on the admin page.
+
+### Production
+`docker compose up -d --build` runs a hardened container (non-root, read-only filesystem, one writable data volume, port bound to localhost only) behind a TLS reverse proxy such as Caddy. A complete walkthrough for a Linux vServer, including firewall, backups and incident handling, is in [docs/SERVER-HARDENING.md](docs/SERVER-HARDENING.md) and [docs/DEPLOY.md](docs/DEPLOY.md). Run exactly **one** instance: the database is a file and the bots live in the process.
+
+---
+
+## Running modes
+
+| Mode | Players | Bots | Where the world lives | How |
+|---|---|---|---|---|
+| **Game server** (recommended) | Multiplayer, one shared world | 24/7 | On the server, with automatic backups | `npm start` or Docker |
+| **Frontend elsewhere** | Multiplayer | 24/7 | On your server | `npm run build:online -- --api https://your-server`, then host `dist-online/` on itch.io or GitHub Pages and add its address to `CORS_ORIGINS` |
+| **Browser-only** | Single player | Only while the tab is open | In the browser (private file system), exportable | `npm run build:pages` |
+
+All three run the same rules and the same SQL. A static host can never hold the shared database or run the bots, and database credentials must never be shipped in a frontend file; a shared game therefore always needs the game server.
+
+**Browser-only build (GitHub Pages).** The whole game, including the bots, runs in a Web Worker on SQLite compiled to WebAssembly; the save lives in the browser (export and import on the *Game* page; clearing site data deletes it). To publish: push to `main`, enable *Settings → Pages → Source: GitHub Actions*, and the workflow in `.github/workflows/pages.yml` tests, builds and deploys. Locally: `npm run build:pages && npm run preview`. In this mode you are always the admin.
+
+---
+
+## Administration
+
+An **Admin** entry appears in the menu for administrators. Everything is effective immediately, stored in the database and included in backups:
+- **Rates:** XP multiplier, gold multiplier, XP needed per level.
+- **Settings:** more than 80 numbers, each with safe limits: every cooldown (raid, hunt portion, work shift, dungeon, Ancestral Site, arena ...), combat, progression, economy, dungeon, skill board, shrine, quests, clans.
+- **Presets:** Normal, Double XP/gold, Speed server (5× with short cooldowns).
+- **World wipe:** keep all accounts or only admins; clans, market, mail, battles and bots are deleted and fresh bots start at level 1. Settings and the audit log survive: regular wipes and speed servers need no code changes.
+- **Players:** search, edit level, gold, attributes and health; give items; release a stuck character; reset a password; promote or delete.
+- **Announcements** to every player and a **log** of all admin actions.
+
+On a multiplayer server the admin flag can only be set on the server itself, so nobody can promote themselves; wiping, deleting accounts, resetting passwords and promoting ask for the admin's password again:
+
+```bash
+node scripts/admin.ts /data/monsters.db grant MyName
 node scripts/admin.ts /data/monsters.db list
 node scripts/admin.ts /data/monsters.db revoke MyName
 ```
-On a server, wiping, deleting accounts, resetting passwords and giving admin rights ask for the admin's password again. Settings are stored in the database (only what differs from `src/config.ts`), so they survive restarts and come with backups.
+
+---
+
+## Development
+
+```bash
+npm test             # the full suite on node:sqlite (in-memory database, injected clock, seeded RNG)
+npm run test:wasm    # the same suite on SQLite-WebAssembly (the browser engine)
+npm run typecheck
+npm run e2e          # real Firefox against the browser-only build
+npm run e2e:online   # real Firefox: a server plus a frontend on another origin
+```
+
+### Architecture
+- `src/game/` the rules (raids, economy, clans, arena, dungeon, shrine, quests, skills, notifications ...), all taking `now` and `rng` as parameters; every action runs in one SQLite transaction.
+- `src/api.ts` the HTTP API (Hono, runs on Node, in a Web Worker, or anywhere); `src/node-app.ts` adds static files and the security layer (`src/security.ts`: CORS, rate limits, headers).
+- `src/db-core.ts` schema, migrations and transactions on a small database interface with two adapters: `node:sqlite` (`src/db.ts`) and WebAssembly (`src/browser/`).
+- `src/config.ts` default numbers and catalogs; `src/settings.ts` the live-tunable subset; `src/skills.ts` and `src/quests.ts` the board and the quest pool.
+- `src/bots/` the automatic players. `public/` the frontend (vanilla JavaScript, no build step); `test/` the tests, including the UI driven in jsdom against the real API.
+
+### Balance tools
+Balance is measured, not guessed. `node scripts/progress.ts 150 100 1 30` runs 100 bots for 150 virtual days on a throwaway database and prints level curves by day and by playing style (about six minutes); `SIM_SET="rateXp=2"` tries a setting, `SIM_TEMPO=6` simulates players who log in less often. `scripts/balance.ts` prints combat win rates, `scripts/dungeon-calibrate.ts` dungeon depth by strength. Results and targets: [docs/BALANCE.md](docs/BALANCE.md).
+
+### Art
+The game works without images (text and emoji fallbacks) and shows any image the moment its file exists. `npm run assets` writes the complete list with filenames, sizes and ready-to-paste prompts ([docs/ASSETS.md](docs/ASSETS.md)); `npm run art -- <image> <number|id>` imports generated art (background removal, trimming, fitting).
+
+---
+
+## Documentation
+
+| Document | Contents |
+|---|---|
+| [docs/MECHANICS.md](docs/MECHANICS.md) | Rules reference: which numbers are documented, which are design decisions, which are assumed |
+| [docs/BALANCE.md](docs/BALANCE.md) | Pacing targets, simulation results, findings |
+| [docs/DEPLOY.md](docs/DEPLOY.md) | Hosting options, configuration, backups and restore |
+| [docs/SERVER-HARDENING.md](docs/SERVER-HARDENING.md) | Step-by-step secure Linux vServer setup |
+| [docs/SECURITY.md](docs/SECURITY.md) | Threat model, protections with their tests, residual risks |
+| [docs/ASSETS.md](docs/ASSETS.md) | Art bible, filenames, prompts |

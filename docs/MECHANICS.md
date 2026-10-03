@@ -76,6 +76,3 @@ NEW, not in the original game. `src/skills.ts` generates the board (7 regions x 
 
 ## Equipment and balance
 Gear, prices, pacing targets and the measurements behind them are in [BALANCE.md](BALANCE.md).
-
-## Build status
-See README milestones.
