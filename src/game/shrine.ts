@@ -16,6 +16,7 @@ import { installedParts, routineSlots, tankSize, upgradeCount } from './blood.ts
 import { delveAuto, MIN_FIGHT_MS } from './dungeon.ts';
 import { bump } from './counters.ts';
 import { modsOf } from './mods.ts';
+import { notify } from './notify.ts';
 import { resolveHunt, wagesFor } from './economy.ts';
 import { assertFree, awardXp, isBusy, loadPlayer, type Player } from './player.ts';
 
@@ -157,7 +158,9 @@ function pay(db: DB, id: number, step: Step, units: number, at: number, budget: 
     if (portions <= 0) return;
     budget.set(day, used + portions * CFG.huntPortion);
     const r = resolveHunt(db, p, portions, rng, now);
-    db.prepare('UPDATE players SET gold = gold + ? WHERE id = ?').run(Math.round(r.gold * eff), id);
+    const gold = Math.round(r.gold * eff);
+    db.prepare('UPDATE players SET gold = gold + ? WHERE id = ?').run(gold, id);
+    bump(db, id, 'hunt_gold', gold); bump(db, id, 'gold_earned', gold);
     awardXp(db, id, Math.round(r.xp * eff), now);
   } else if (step.kind === 'dungeon') {
     // all or nothing: a run is only played when its whole time has passed (a paused one is simply cancelled)
@@ -165,7 +168,7 @@ function pay(db: DB, id: number, step: Step, units: number, at: number, budget: 
   } else {
     const wages = wagesFor(db, p, units, eff);
     db.prepare('UPDATE players SET gold = gold + ? WHERE id = ?').run(wages, id);
-    bump(db, id, 'work_hours', Math.floor(units)); bump(db, id, 'work_gold', wages);
+    bump(db, id, 'work_hours', Math.floor(units)); bump(db, id, 'work_gold', wages); bump(db, id, 'gold_earned', wages);
   }
 }
 
@@ -188,11 +191,13 @@ export function settle(db: DB, id: number, now: number, rng: Rng) {
     const end = at + stepMs(step);
     if (end > now) break; // still in progress
     pay(db, id, step, step.amount, end, budget, now, rng);
+    bump(db, id, 'shrine_steps');
     idx = (idx + 1) % steps.length; at = end;
     if (!charge(db, id, steps[idx])) { status = 'starved'; break; }
   }
   saveBudget(db, id, budget);
   db.prepare('UPDATE shrine SET status = ?, step = ?, step_at = ? WHERE player_id = ?').run(status, idx, at, id);
+  if (status === 'starved') notify(db, id, 'shrine', 'The shrine ran out of blood', 'Hunt, work, raid or delve to gather more, then start it again.', '#/shrine', now);
 }
 
 /**

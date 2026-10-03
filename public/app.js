@@ -29,6 +29,67 @@ function applyTheme() {
 let token = localStorage.getItem('mg_token');
 let me = null, catalog = null, skew = 0, lastResult = null, devEnabled = false, huntResult = null, dungeonResult = null;
 
+// ---------- notifications: bell, alert bar, polling ----------
+const notes = { unread: 0, cursor: 0, timer: null, open: false };
+const BASE_TITLE = document.title;
+const NOTE_ICON = { raid: '⚔', level: '⭐', mail: '✉', market: '💰', arena: '🏟', clan: '🏰', war: '⚔', shrine: '🩸', quests: '📜', announce: '📣', system: 'ℹ' };
+const ago = (t) => { const s = Math.max(0, Math.round((now() - t) / 1000)); return s < 60 ? 'just now' : s < 3600 ? `${Math.floor(s / 60)} min ago` : s < 86400 ? `${Math.floor(s / 3600)} h ago` : `${Math.floor(s / 86400)} d ago`; };
+
+/** The bar under the header: what needs you right now (derived by the server from your state) plus unread notifications. */
+function renderAlerts(fresh = []) {
+  const bar = document.getElementById('alerts'); if (!bar) return;
+  const alerts = token && me ? me.alerts ?? [] : [];
+  bar.innerHTML = (token && me && notes.unread ? `<a class="chip warn${fresh.length ? ' fresh' : ''}" id="chip-notes">🔔 ${notes.unread} new notification${notes.unread === 1 ? '' : 's'}</a>` : '')
+    + alerts.map((a) => `<a class="chip ${esc(a.tone)}${fresh.includes(a.key) ? ' fresh' : ''}" href="${esc(a.link)}">${esc(a.text)}</a>`).join('');
+  bar.querySelector('#chip-notes')?.addEventListener('click', toggleDrop);
+  const n = (token && me ? notes.unread + alerts.length : 0);
+  document.title = n ? `(${n}) ${BASE_TITLE}` : BASE_TITLE;
+}
+
+function closeDrop() { notes.open = false; const d = document.getElementById('notif-drop'); if (d) d.hidden = true; }
+async function toggleDrop() {
+  const d = document.getElementById('notif-drop'); if (!d) return;
+  if (notes.open) return closeDrop();
+  notes.open = true; d.hidden = false;
+  try {
+    const r = await api('/notifications?limit=12');
+    notes.unread = r.unread;
+    d.innerHTML = (r.items.length ? r.items.map((n) => noteHtml(n)).join('') : '<p class="muted" style="padding:.5rem">Nothing yet. When something happens to you (a raid, a sale, a war ...) it shows up here.</p>')
+      + `<div class="row sp" style="padding:.4rem .6rem"><a href="#/notifications">All notifications</a><button class="sm sec" id="note-all">Mark all as read</button></div>`;
+    d.querySelectorAll('a.note').forEach((a) => a.addEventListener('click', () => { markNote(Number(a.dataset.id)); closeDrop(); }));
+    d.querySelector('#note-all').onclick = async () => { await api('/notifications/read', { all: true }); notes.unread = 0; renderHeader(route().page); closeDrop(); };
+    renderHeader(route().page);
+  } catch (e) { d.innerHTML = `<p class="bad" style="padding:.5rem">${esc(e.message)}</p>`; }
+}
+const noteHtml = (n) => `<a class="note${n.read ? '' : ' unread'}" data-id="${n.id}" href="${esc(n.link || '#/notifications')}"><b>${NOTE_ICON[n.kind] ?? '•'} ${esc(n.title)}</b><span class="muted">${esc(n.body)}${n.body ? ' · ' : ''}${ago(n.at)}</span></a>`;
+async function markNote(id) {
+  try { await api('/notifications/read', { ids: [id] }); notes.unread = Math.max(0, notes.unread - 1); renderHeader(route().page); } catch { /* the page still works */ }
+}
+document.addEventListener('click', (e) => { if (notes.open && !e.target.closest('#notif-drop, #bell, #chip-notes')) closeDrop(); });
+
+const desktopOn = () => { try { return localStorage.getItem('mg_desktop') === '1' && typeof Notification !== 'undefined' && Notification.permission === 'granted'; } catch { return false; } };
+/** Ask the server what is new. New events pop up as toasts (and as desktop notifications when you allowed them and the tab is hidden). */
+async function poll() {
+  if (!token || !me || (document.hidden && !desktopOn())) return;
+  try {
+    const r = await api(`/notifications/poll?after=${notes.cursor}`);
+    skew = r.serverNow - Date.now();
+    const before = new Set((me.alerts ?? []).map((a) => a.key));
+    me.alerts = r.alerts; notes.unread = r.unread;
+    const fresh = r.alerts.map((a) => a.key).filter((k) => !before.has(k));
+    for (const n of r.items) {
+      notes.cursor = Math.max(notes.cursor, n.id);
+      toast(`${NOTE_ICON[n.kind] ?? '•'} ${n.title}`);
+      if (document.hidden && desktopOn()) { try { new Notification(n.title, { body: n.body }); } catch { /* not allowed here */ } }
+    }
+    renderHeader(route().page); renderAlerts(fresh);
+    if (r.items.length) { const bell = document.getElementById('bell'); bell?.classList.remove('ring'); void bell?.offsetWidth; bell?.classList.add('ring'); }
+  } catch { /* offline for a moment: the next poll tries again */ }
+}
+function startPolling() { if (!notes.timer) notes.timer = setInterval(poll, 20_000); }
+function stopPolling() { clearInterval(notes.timer); notes.timer = null; }
+document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
+
 // ---------- infrastructure ----------
 async function api(path, body) {
   // Same-origin by default (relative, so a sub-path like /MonstersGame/ works). With window.MG_API set (config.js) the game is
@@ -82,6 +143,7 @@ function resultMessage(path, r) {
   if (path === '/dungeon/sell') return { text: `The dealer pays ${fmt(r.gold)} gold for ${r.count} item${r.count === 1 ? '' : 's'}` };
   if (path === '/temple/buy') return { text: `You bought ${r.item} for ${fmt(r.paid)} gold` };
   if (path === '/inventory/harden') return { text: `Weapon hardened to +${r.hardening} (${fmt(r.cost)}g)` };
+  if (path === '/quests/claim') return { text: `Quest done! You took ${r.text}` };
   if (path === '/hunt/start') return { text: 'You slip into the night… the hunt has begun.' };
   if (path === '/hunt/collect') return { text: `Hunt complete: +${r.xp} XP, +${r.gold} gold${r.levelsGained ? ' — LEVEL UP!' : ''}${r.found?.length ? ` — you found ${r.found.join(', ')}!` : ''}` };
   if (path === '/hunt/cancel') return { text: `Hunt abandoned: ${r.portionsCompleted} portion(s) paid out (+${r.xp} XP, +${r.gold} gold)` };
@@ -96,6 +158,8 @@ async function refresh() {
   if (!token) return;
   me = await api('/me');
   skew = me.serverNow - Date.now();
+  notes.unread = me.unreadNotifications; if (!notes.cursor) notes.cursor = me.notificationCursor;
+  startPolling();
   applyTheme();
   render();
 }
@@ -103,6 +167,7 @@ async function refresh() {
 function logout(silent) {
   if (token && !silent) api('/logout', {}).catch(() => {}); // end the session on the server too, not only in this browser
   token = null; me = null; localStorage.removeItem('mg_token');
+  stopPolling(); notes.unread = 0; notes.cursor = 0; renderAlerts(); closeDrop();
   if (!silent) toast('Logged out');
   location.hash = '#/'; render();
 }
@@ -123,7 +188,7 @@ const bar = (cls, val, max, label) =>
 const raceName = (r) => `<span class="${r}">${r === 'vampire' ? 'Vampire' : 'Werewolf'}</span>`;
 
 // ---------- routing ----------
-const PAGES = [['overview', 'Overview'], ['raid', 'Raid'], ['hunt', 'Hunt'], ['dungeon', 'Dungeon'], ['skills', 'Skills'], ['shrine', 'Shrine'], ['town', 'Town'], ['hideout', 'Hideout'],
+const PAGES = [['overview', 'Overview'], ['raid', 'Raid'], ['hunt', 'Hunt'], ['dungeon', 'Dungeon'], ['quests', 'Quests'], ['skills', 'Skills'], ['shrine', 'Shrine'], ['town', 'Town'], ['hideout', 'Hideout'],
   ['ancestral', 'Ancestral Site'], ['arena', 'Arena'], ['acc', 'Achievements'], ['clan', 'Clan'], ['mail', 'Mail'], ['messages', 'Reports'], ['highscore', 'Highscore'],
   ...(window.MG_LOCAL ? [['settings', 'Game']] : [])];
 /** the menu; "Admin" only exists for admins (single player: always). The server checks again on every admin request. */
@@ -141,7 +206,7 @@ function route() {
 addEventListener('hashchange', render);
 
 const BANNER_TITLES = { login: 'Welcome', overview: 'Overview', raid: 'Raid', hunt: 'Manhunt', store: 'Store', inventory: 'Inventory', temple: 'Blood Temple', sentinels: 'Sentinels',
-  war: 'War Room', dungeon: 'The Dungeon', skills: 'Skills', shrine: 'The Shrine', dealer: 'Relic Dealer', graveyard: 'Graveyard', hideout: 'Hideout', ancestral: 'Ancestral Site', arena: 'Arena', achievements: 'Achievements', clan: 'Clan', forum: 'Clan Forum', mail: 'Mail', reports: 'Battle Reports',
+  war: 'War Room', dungeon: 'The Dungeon', skills: 'Skills', shrine: 'The Shrine', quests: 'Weekly quests', notifications: 'Notifications', dealer: 'Relic Dealer', graveyard: 'Graveyard', hideout: 'Hideout', ancestral: 'Ancestral Site', arena: 'Arena', achievements: 'Achievements', clan: 'Clan', forum: 'Clan Forum', mail: 'Mail', reports: 'Battle Reports',
   highscore: 'Highscore', profile: 'Profile', bite: 'A victim link' };
 function bannerFor(page, arg) {
   const key = page === 'town' ? (arg || 'store') : page === 'clan' && (arg === 'forum' || arg === 'war') ? arg : { acc: 'achievements', messages: 'reports', player: 'profile' }[page] ?? page;
@@ -167,7 +232,7 @@ async function render() {
     if (!me) return await refresh();
     const fn = { overview: pageOverview, raid: pageRaid, hunt: pageHunt, town: pageTown, hideout: pageHideout,
       ancestral: pageAncestral, clan: pageClan, messages: pageMessages, highscore: pageHighscore,
-      dungeon: pageDungeon, skills: pageSkills, shrine: pageShrine, arena: pageArena, acc: pageAcc, mail: pageMail, player: pageProfile, settings: pageSettings, admin: pageAdmin }[page] ?? pageOverview;
+      dungeon: pageDungeon, quests: pageQuests, notifications: pageNotifications, skills: pageSkills, shrine: pageShrine, arena: pageArena, acc: pageAcc, mail: pageMail, player: pageProfile, settings: pageSettings, admin: pageAdmin }[page] ?? pageOverview;
     const html = await fn(arg, arg2, arg3);
     if (!latest() || route().page !== page) return; // superseded by a newer render or navigation
     view.innerHTML = storageWarning() + bannerFor(page, arg) + html;
@@ -178,10 +243,12 @@ async function render() {
 
 function renderHeader(page) {
   $('#top').innerHTML = `<span class="brand">${A('brand/logo') ? `<img class="logo" src="${A('brand/logo')}" alt="MonstersGame-Reloaded">` : '🦇 MonstersGame-Reloaded'}</span>` + (me ? `
-    <nav>${pages().map(([k, n]) => `<a href="#/${k}" class="${k === page ? 'on' : ''}">${img('nav/' + k, 'nav-ico')}${n}${k === 'mail' && me.unreadMail ? ` <span class="pill gold">${me.unreadMail}</span>` : ''}</a>`).join('')}</nav>
-    <span class="who">${esc(me.name)} · ${raceName(me.race)} · Lv ${me.level} · <span class="gold">${fmt(me.gold)}g</span>
+    <nav>${pages().map(([k, n]) => `<a href="#/${k}" class="${k === page ? 'on' : ''}">${img('nav/' + k, 'nav-ico')}${n}${k === 'mail' && me.unreadMail ? ` <span class="pill gold">${me.unreadMail}</span>` : ''}${k === 'quests' && me.questsReady ? ` <span class="pill gold">${me.questsReady}</span>` : ''}</a>`).join('')}</nav>
+    <span class="who"><a id="bell" title="Notifications" role="button" tabindex="0">🔔${notes.unread ? `<span class="badge">${notes.unread > 99 ? '99+' : notes.unread}</span>` : ''}</a> · ${esc(me.name)} · ${raceName(me.race)} · Lv ${me.level} · <span class="gold">${fmt(me.gold)}g</span>
     · <a data-act="logout">Logout</a></span>` : '');
   $('#top [data-act=logout]')?.addEventListener('click', () => logout());
+  $('#bell')?.addEventListener('click', toggleDrop);
+  renderAlerts();
 }
 
 // generic delegated click handling: <button data-do="path" data-body='{"a":1}' data-ok="msg">
@@ -938,6 +1005,47 @@ async function pageMail(box, arg) {
   const list = await api('/mail' + (sent ? '?box=sent' : ''));
   const rows = list.map((m) => `<tr class="${!sent && !m.read ? 'gold' : ''}"><td>${sent ? esc(m.to_name) : esc(m.from_name)}</td><td><a href="#/mail/${m.id}">${!sent && !m.read ? '● ' : ''}${esc(m.subject)}</a></td><td class="muted">${new Date(m.sent_at).toLocaleString()}</td></tr>`).join('');
   return `${tabs}<div class="card"><h2>${sent ? 'Sent' : 'Inbox'}</h2>${rows ? `<table><tr><th>${sent ? 'To' : 'From'}</th><th>Subject</th><th>Date</th></tr>${rows}</table>` : '<p class="muted">Nothing here.</p>'}</div>`;
+}
+
+// ---------- notifications page ----------
+async function pageNotifications() {
+  const r = await api('/notifications?limit=100');
+  notes.unread = r.unread; renderHeader('notifications');
+  const supported = typeof Notification !== 'undefined';
+  return `<div class="card"><div class="row sp"><h2 style="border:0;margin:0">Notifications</h2><button class="sec sm" data-do="/notifications/read" data-body='{"all":true}' data-ok="All marked as read" ${r.unread ? '' : 'disabled'}>Mark all as read</button></div>
+    ${r.items.length ? r.items.map(noteHtml).join('') : '<p class="muted">Nothing yet. When something happens to you (a raid, a sale, a war, a level) it is listed here and the bell at the top lights up.</p>'}
+    ${supported ? `<hr><label style="display:inline"><input type="checkbox" id="desktop-notes" ${desktopOn() ? 'checked' : ''}> also show desktop notifications while this tab is in the background</label><p class="muted">Your browser asks for permission. The game only asks while it is open in a tab: it cannot reach you when it is closed.</p>` : ''}</div>`;
+}
+// (the checkbox lives in a page that is drawn again after every action, so one delegated listener at the top level)
+document.addEventListener('change', async (e) => {
+  if (e.target?.id !== 'desktop-notes') return;
+  try {
+    if (e.target.checked) { const perm = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission(); if (perm !== 'granted') { e.target.checked = false; toast('The browser did not allow desktop notifications', true); return; } }
+    localStorage.setItem('mg_desktop', e.target.checked ? '1' : '0');
+    toast(e.target.checked ? 'Desktop notifications are on' : 'Desktop notifications are off');
+  } catch { /* storage or notifications not available */ }
+});
+
+// ---------- weekly quests ----------
+const CAT_ICON = { hunt: '🏹', work: '⚰', pvp: '⚔', war: '🏰', dungeon: '🕳', arena: '🏟', ancestral: '👻', economy: '💰', progress: '⭐', social: '💬', shrine: '🩸' };
+const SPECIAL_ICON = { blood: '🩸', potions: '🧪', loot: '💎' };
+async function pageQuests() {
+  const q = await api('/quests');
+  const left = until(q.endsAt) ?? 'a moment';
+  const card = (x) => {
+    const pct = Math.round((x.progress / x.target) * 100);
+    const rewards = x.claimed ? '' : `<div class="row" style="gap:.3rem">${[['gold', `💰 ${fmt(x.rewards.gold)} gold`], ['xp', `✨ ${fmt(x.rewards.xp)} XP`], ['special', `${SPECIAL_ICON[x.rewards.special.kind]} ${x.rewards.special.label}`]].map(([k, label]) =>
+      x.done && !x.locked ? `<button class="sm" data-do="/quests/claim" data-body='${esc(JSON.stringify({ quest: x.id, choice: k }))}' title="Choose this reward">${esc(label)}</button>` : `<span class="pill" title="${x.locked ? 'locked' : 'you choose one when it is done'}">${esc(label)}</span>`).join('')}</div>`;
+    return `<div class="card quest ${x.claimed ? 'claimed' : x.done && !x.locked ? 'done' : ''} ${x.locked ? 'locked' : ''}" style="margin:0">
+      <div class="row sp"><b>${CAT_ICON[x.category] ?? '•'} ${esc(x.title)}</b><span class="pill ${esc(x.tier)}">${esc(x.tier)}</span></div>
+      <div>${esc(x.text)}</div>
+      ${bar('xp', x.progress, x.target, `${fmt(x.progress)} / ${fmt(x.target)}`)}
+      ${x.locked ? `<div class="muted">🔒 Unlocks at level ${x.minLevel}</div>` : x.claimed ? `<div class="good">✔ Reward taken: ${esc({ gold: 'gold', xp: 'XP', special: 'special' }[x.claimed])}</div>` : x.done ? '<div class="gold"><b>Done! Choose your reward:</b></div>' : '<div class="muted">Your reward (choose one when done):</div>'}
+      ${rewards}</div>`;
+  };
+  return `<div class="card"><div class="row sp"><h2 style="border:0;margin:0">Weekly quests</h2><span class="muted">${q.claimed} of ${q.quests.length} rewards taken · new quests in <b>${esc(left)}</b></span></div>
+    <p class="muted">The same ten quests for everybody this week, new ones every Monday. You can plan: nothing is daily. Every finished quest lets you choose <b>one</b> of three rewards, and they grow with your level. What you do not claim before Monday is gone. Progress counts from Monday on, whatever you did before.</p></div>
+    <div class="grid">${q.quests.map(card).join('')}</div>`;
 }
 
 // ---------- skill board ----------

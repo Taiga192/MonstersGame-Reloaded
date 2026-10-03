@@ -66,6 +66,7 @@ function enter(db: DB, eventId: number, playerId: number, now: number) {
   db.prepare('UPDATE players SET gold = gold - ? WHERE id = ?').run(e.fee, playerId);
   db.prepare('INSERT INTO arena_entries (event_id, player_id, stats, max_hp, skill, strength) VALUES (?,?,?,?,?,?)')
     .run(eventId, playerId, JSON.stringify(stats), p.max_hp, skillAverage(p), strengthOf(stats));
+  bump(db, playerId, 'arena_joined');
   if (entryCount(db, eventId) >= e.size) db.prepare("UPDATE arena_events SET status = 'full', full_at = ?, start_at = ? WHERE id = ?").run(now, nextStart(now), eventId);
 }
 
@@ -105,7 +106,7 @@ function cancelInternal(db: DB, e: EventRow, now: number, reason: string) {
   refund(db, e);
   db.prepare("UPDATE arena_events SET status = 'cancelled' WHERE id = ?").run(e.id);
   for (const r of db.prepare('SELECT player_id FROM arena_entries WHERE event_id = ?').all(e.id) as { player_id: number }[])
-    systemMail(db, r.player_id, `Arena event #${e.id} cancelled`, `${reason} Your entry fee of ${e.fee} gold was refunded.`, now);
+    systemMail(db, r.player_id, `Arena event #${e.id} cancelled`, `${reason} Your entry fee of ${e.fee} gold was refunded.`, now, { kind: 'arena', link: '#/arena' });
 }
 
 // ---------- running events ----------
@@ -174,7 +175,7 @@ function runEvent(db: DB, e: EventRow, now: number, rng: Rng) {
     const place = (db.prepare('SELECT place FROM arena_entries WHERE event_id = ? AND player_id = ?').get(e.id, r.player_id) as { place: number }).place;
     const gold = payouts.get(r.player_id) ?? 0;
     systemMail(db, r.player_id, `Arena event #${e.id} finished`,
-      `${champ.name} won the ${e.kind}. You placed #${place}.${gold ? ` You won ${gold} gold.` : ''} Match logs are in the arena.`, now);
+      `${champ.name} won the ${e.kind}. You placed #${place}.${gold ? ` You won ${gold} gold.` : ''} Match logs are in the arena.`, now, { kind: 'arena', link: '#/arena' });
   }
 }
 
@@ -190,7 +191,7 @@ export function tick(db: DB, now: number, rng: Rng) {
     const top = db.prepare('SELECT player_id FROM arena_season WHERE season = ? ORDER BY points DESC, wins DESC LIMIT 3').all(season) as { player_id: number }[];
     top.forEach((r, i) => {
       db.prepare('INSERT OR IGNORE INTO arena_titles (season, place, player_id) VALUES (?,?,?)').run(season, i + 1, r.player_id);
-      systemMail(db, r.player_id, `Arena season ${season}: rank #${i + 1}`, `You finished season ${season} in place ${i + 1} and earned a title.`, now);
+      systemMail(db, r.player_id, `Arena season ${season}: rank #${i + 1}`, `You finished season ${season} in place ${i + 1} and earned a title.`, now, { kind: 'arena', link: '#/arena' });
     });
   }
 }

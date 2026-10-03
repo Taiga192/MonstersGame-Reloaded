@@ -155,6 +155,15 @@ CREATE TABLE IF NOT EXISTS shrine (
   player_id INTEGER PRIMARY KEY REFERENCES players(id), level INTEGER NOT NULL DEFAULT 1, status TEXT NOT NULL DEFAULT 'off', -- off | running | paused | starved
   routine TEXT NOT NULL DEFAULT '[]', step INTEGER NOT NULL DEFAULT 0, step_at INTEGER NOT NULL DEFAULT 0, bought_at INTEGER NOT NULL
 );
+-- notifications: things that happened to a player while they were away (raided, item sold, war declared ...). Humans only.
+CREATE TABLE IF NOT EXISTS notifications (
+  id INTEGER PRIMARY KEY, player_id INTEGER NOT NULL REFERENCES players(id), kind TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL DEFAULT '',
+  link TEXT NOT NULL DEFAULT '', at INTEGER NOT NULL, is_read INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS notifications_player ON notifications(player_id, id);
+-- weekly quests: the counters at the start of the week (progress = counter now - counter then) and what a player has claimed
+CREATE TABLE IF NOT EXISTS quest_base (player_id INTEGER NOT NULL, key TEXT NOT NULL, value INTEGER NOT NULL, PRIMARY KEY (player_id, key));
+CREATE TABLE IF NOT EXISTS quest_state (player_id INTEGER NOT NULL, quest_id TEXT NOT NULL, target INTEGER NOT NULL, reward TEXT, PRIMARY KEY (player_id, quest_id));
 CREATE TABLE IF NOT EXISTS skills (player_id INTEGER NOT NULL REFERENCES players(id), node_id TEXT NOT NULL, PRIMARY KEY (player_id, node_id));
 CREATE TABLE IF NOT EXISTS shrine_components (player_id INTEGER NOT NULL REFERENCES players(id), kind TEXT NOT NULL, tier INTEGER NOT NULL, PRIMARY KEY (player_id, kind));
 -- admin page: tuned numbers (only the ones that differ from config.ts), world facts, and an audit trail of what admins did

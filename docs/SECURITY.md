@@ -21,6 +21,7 @@ Attackers are anonymous internet users (players, cheaters, scanners), a maliciou
 | Exposure of the server itself | listens on 127.0.0.1 by default, non-root read-only container, private file modes (umask 077) | manual check, see SERVER-HARDENING.md |
 | Data loss | automatic consistent backups, final backup on shutdown | `test/backend.test.ts` |
 | Admin page abused (promoting yourself, editing others) | the admin flag exists only in the database and is read on every request (never from the client); it can only be set by hand on the server or by an existing admin with their password; every admin route returns 403 for others; dangerous actions (wipe, delete, password reset, admin flag) need the admin password again; admin values are range-checked and every action is written to an audit log | `test/admin.test.ts`, `test/admin-ui.test.ts` |
+| Reading or clearing somebody else's notifications and quests | every notification and quest route works only on the logged-in player's own rows; ids that belong to others are ignored; links in notifications are restricted to in-game routes; claim and read routes are validated and fuzzed | `test/notifications.test.ts`, `test/quests.test.ts` |
 | Cheating via dev tools | not registered when `NODE_ENV=production` | `test/server-safety.test.ts` |
 
 Honest note: the route sanitiser in the frontend is defence in depth only. The old code was not exploitable through it, so its test passes with or without it.

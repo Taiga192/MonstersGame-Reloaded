@@ -3,6 +3,7 @@ import type { DB } from '../db-core.ts';
 import { assert } from '../errors.ts';
 import { modsOf } from './mods.ts';
 import { systemMail } from './mail.ts';
+import { bump } from './counters.ts';
 import { assertFree, loadPlayer, vitalityRoom } from './player.ts';
 
 // Blood Temple: player-to-player market. Blood crystals do not exist in this game, so trading is item-for-gold.
@@ -14,7 +15,7 @@ export function expireListings(db: DB, now: number) {
   for (const l of rows) {
     db.prepare('INSERT INTO inventory (player_id, item_key, bought_at, hardening) VALUES (?,?,?,?)').run(l.seller_id, l.item_key, now, l.hardening);
     db.prepare("UPDATE temple_listings SET status = 'expired' WHERE id = ?").run(l.id);
-    systemMail(db, l.seller_id, 'Blood Temple: listing expired', `Your listing of ${ITEM_BY_KEY.get(l.item_key)?.name} expired and the item was returned to your inventory.`, now);
+    systemMail(db, l.seller_id, 'Blood Temple: listing expired', `Your listing of ${ITEM_BY_KEY.get(l.item_key)?.name} expired and the item was returned to your inventory.`, now, { kind: 'market', link: '#/town/temple' });
   }
 }
 
@@ -57,7 +58,8 @@ export function buyListing(db: DB, playerId: number, listingId: number, now: num
   db.prepare('UPDATE players SET gold = gold + ? WHERE id = ?').run(proceeds, l.seller_id);
   db.prepare('INSERT INTO inventory (player_id, item_key, bought_at, hardening) VALUES (?,?,?,?)').run(playerId, l.item_key, now, l.hardening);
   db.prepare("UPDATE temple_listings SET status = 'sold', buyer_id = ?, sold_at = ? WHERE id = ?").run(playerId, now, listingId);
-  systemMail(db, l.seller_id, 'Blood Temple: item sold', `${p.name} bought your ${item.name}${l.hardening ? ` (+${l.hardening})` : ''} for ${l.price} gold. After the temple fee (${fee}) you received ${proceeds} gold.`, now);
+  systemMail(db, l.seller_id, 'Blood Temple: item sold', `${p.name} bought your ${item.name}${l.hardening ? ` (+${l.hardening})` : ''} for ${l.price} gold. After the temple fee (${fee}) you received ${proceeds} gold.`, now, { kind: 'market', link: '#/town/temple' });
+  bump(db, playerId, 'temple_buys'); bump(db, l.seller_id, 'temple_sales');
   return { paid: l.price, item: item.name };
 }
 

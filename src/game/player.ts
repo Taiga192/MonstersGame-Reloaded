@@ -3,6 +3,8 @@ import type { DB } from '../db-core.ts';
 import { assert, GameError } from '../errors.ts';
 import { accomplishmentBonus } from './accomplishments.ts';
 import { modsOf } from './mods.ts';
+import { bump } from './counters.ts';
+import { notify } from './notify.ts';
 
 export interface Player {
   id: number; name: string; pass_hash: string; race: Race; level: number; xp: number; gold: number;
@@ -180,5 +182,7 @@ export function awardXp(db: DB, id: number, xp: number, now: number): XpResult {
     awardXp(db, p.referrer_id, CFG.recruitXp, now);
     referralPaid = true;
   }
+  bump(db, id, 'xp_gained', xpGained); bump(db, id, 'levels_gained', levelsGained);
+  if (levelsGained > 0) notify(db, id, 'level', `You reached level ${level}`, 'Every level is a skill point: open the skill board.', '#/skills', now);
   return { levelsGained, goldBonus, referralPaid, xpGained };
 }

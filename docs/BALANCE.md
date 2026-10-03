@@ -86,6 +86,15 @@ measurement (before node costs; not repeated).
   Tracking arms (`REGION_DEFS` in `src/skills.ts`).
 * What a typical bot ends up with is far from every cap in `MODS`.
 
+## Weekly quests
+105 quests, 10 per week (see README). Rewards per finished quest, for a character of level L: gold `2L+10` (easy), `4L+20` (normal), `8L+40` (hard);
+XP 3 % / 6 % / 12 % of the XP needed for the next level; or a special reward (10 / 20 / 40 animal blood, 1 / 2 / 4 health potions, or
+dungeon loot worth 1.4x the gold). All multiplied by the reward scale on the admin page. Measured (same seed, 150 days, active
+population, with the board and shrine): median level on the last day **89 without quest rewards, 92 with them (+3 %)**; the hunter
+style 103 -> 105. Active bots finish about six of the ten quests in a week (bots only look at the quests now and then), so the
+rewards are worth roughly a tenth of a week's gold and a few percent of its XP: a nice planned extra, not a second income.
+If they should matter more or less, change the reward scale; the number of quests per week is a setting too.
+
 ## What changed
 * **Equipment now carries a character to level 100.** Five gear lines with 25 tiers each (a new tier every 4 levels: Blade/Strength,
   Plate/Defence, Hide/Stamina, Talon/Agility, Gauntlet/Dexterity), 14 Stat Rings, 12 Plunder Rings, 12 Tracker Rings, 6 Amulets of

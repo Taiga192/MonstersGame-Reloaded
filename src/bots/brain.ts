@@ -8,6 +8,7 @@ import * as clan from '../game/clan.ts';
 import * as dungeon from '../game/dungeon.ts';
 import * as shrine from '../game/shrine.ts';
 import * as skills from '../game/skills.ts';
+import * as questsApi from '../game/quests.ts';
 import { NODE_BY_ID, NODES } from '../skills.ts';
 import { discounted } from '../game/mods.ts';
 import * as eco from '../game/economy.ts';
@@ -51,6 +52,8 @@ export function runSession(ctx: Ctx, bot: BotRow): SessionResult {
   const actions: string[] = [];
   const note = (a: string) => actions.push(a);
 
+  questsApi.ensureWeek(db, now); // a new quest week starts before anything counts in it
+
   // 1) collect anything that finished while the bot was away
   let p = loadPlayer(db, id, now);
   if (p.hunt_started && !isHunting(p, now)) { const r = attempt(() => eco.collectHunt(db, id, now, rng)); if (r) note(`hunt +${r.xp}xp +${r.gold}g`); }
@@ -69,7 +72,7 @@ export function runSession(ctx: Ctx, bot: BotRow): SessionResult {
   maintain(ctx, id, persona, note);
   social(ctx, id, persona, note);
   arenaTurn(ctx, id, persona, note);
-  const inside = dungeonTurn(ctx, id, persona, note);
+  const inside = isNight(now, bot.tz) ? null : dungeonTurn(ctx, id, persona, note); // (nobody starts a dungeon run at 3 am: the bots sleep)
   if (inside != null) return { nextAt: inside, sessionsLeft: bot.sessions_left, actions }; // entered the dungeon: stays there until the run ends
 
   // 3) the main activity of this session
@@ -93,6 +96,18 @@ export function runSession(ctx: Ctx, bot: BotRow): SessionResult {
   else if (goAway && !started) nextAt = now + (isNight(now, bot.tz) ? randInt(rng, 300, 540) : randInt(rng, 60, 240)) * MIN * persona.tempo; // logged out: sleeping at night, otherwise a few hours
   else nextAt = now + randInt(rng, 16, 40) * MIN * persona.tempo;
   return { nextAt, sessionsLeft, actions };
+}
+
+// ---------------------------------------------------------------- weekly quests
+/** Now and then look at the weekly quests and take the reward of every finished one (gold, XP or the special reward). */
+function questTurn(ctx: Ctx, id: number, note: (a: string) => void) {
+  const { db, now, rng } = ctx;
+  if (rng() > 0.25) return;
+  for (const q of questsApi.questState(db, id, now).quests) {
+    if (!q.done || q.claimed || q.locked) continue;
+    const roll = rng(), choice = roll < 0.4 ? 'xp' : roll < 0.8 ? 'gold' : 'special';
+    if (ok(() => questsApi.claim(db, id, q.id, choice, now))) note(`quest: ${q.title} (${choice})`);
+  }
 }
 
 // ---------------------------------------------------------------- skill board
@@ -181,6 +196,7 @@ function maintain(ctx: Ctx, id: number, persona: Persona, note: (a: string) => v
   spend(ctx, p, persona, note);
   shrineSetup(ctx, loadPlayer(db, id, now), persona, note);
   skillTurn(ctx, id, persona, note);
+  questTurn(ctx, id, note);
   if (rng() < persona.trade) marketSell(ctx, id, persona, note);
   tuneAccomplishments(ctx, id, note);
   p = loadPlayer(db, id, now);

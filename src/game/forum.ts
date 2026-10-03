@@ -1,5 +1,6 @@
 import { CFG } from '../config.ts';
 import type { DB } from '../db-core.ts';
+import { bump } from './counters.ts';
 import { assert } from '../errors.ts';
 import { permsOf } from './clan.ts';
 import { loadPlayer } from './player.ts';
@@ -33,6 +34,7 @@ export function createThread(db: DB, playerId: number, title: string, body: stri
   title = clean(title, 80, 'Title'); body = clean(body, 4000, 'Post');
   const id = Number(db.prepare('INSERT INTO forum_threads (clan_id, author_id, title, created_at, last_at) VALUES (?,?,?,?,?)').run(clanId, playerId, title, now, now).lastInsertRowid);
   db.prepare('INSERT INTO forum_posts (thread_id, author_id, body, created_at) VALUES (?,?,?,?)').run(id, playerId, body, now);
+  bump(db, playerId, 'forum_posts');
   return { id };
 }
 
@@ -43,6 +45,7 @@ export function reply(db: DB, playerId: number, threadId: number, body: string, 
   assert(!t.locked || mod, 'locked', 'This thread is locked', 403);
   db.prepare('INSERT INTO forum_posts (thread_id, author_id, body, created_at) VALUES (?,?,?,?)').run(threadId, playerId, clean(body, 4000, 'Post'), now);
   db.prepare('UPDATE forum_threads SET last_at = ? WHERE id = ?').run(now, threadId);
+  bump(db, playerId, 'forum_posts');
 }
 
 export function listThreads(db: DB, playerId: number, now: number) {

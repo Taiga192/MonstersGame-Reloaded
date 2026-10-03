@@ -20,6 +20,7 @@ export function trainStat(db: DB, id: number, stat: Stat, now: number) {
   const cost = discounted(CFG.trainCost(p[stat]), p, 'trainDiscount');
   assert(p.gold >= cost, 'no_gold', `Need ${cost} gold`);
   db.prepare(`UPDATE players SET gold = gold - ?, ${stat} = ${stat} + 1 WHERE id = ?`).run(cost, id);
+  bump(db, id, 'train_points');
   return { stat, value: p[stat] + 1, cost };
 }
 
@@ -36,6 +37,7 @@ export function buyItem(db: DB, id: number, key: string, now: number) {
   assert(item.potion !== 'maxhp' || vitalityRoom(db, p) > 0, 'vitality_cap', `You cannot use any more Vitality Potions (maximum +${CFG.vitalityCap} max HP in total, counting the ones in your bag)`);
   db.prepare('UPDATE players SET gold = gold - ? WHERE id = ?').run(price, id);
   db.prepare('INSERT INTO inventory (player_id, item_key, bought_at) VALUES (?,?,?)').run(id, key, now);
+  bump(db, id, 'items_bought');
 }
 
 export function sellItem(db: DB, id: number, inventoryId: number, now: number) {
@@ -44,6 +46,7 @@ export function sellItem(db: DB, id: number, inventoryId: number, now: number) {
   const price = Math.floor((ITEM_BY_KEY.get(row.item_key)!.price / 2) * factor(loadPlayer(db, id, now), 'sellBonus')); // items sell at 50 % (plus the skill board's bonus)
   db.prepare('DELETE FROM inventory WHERE id = ?').run(inventoryId);
   db.prepare('UPDATE players SET gold = gold + ? WHERE id = ?').run(price, id);
+  bump(db, id, 'items_sold');
   return { price };
 }
 
@@ -61,6 +64,7 @@ export function usePotion(db: DB, id: number, inventoryId: number, now: number) 
   }
   else db.prepare('UPDATE players SET potion_stat_until = ? WHERE id = ?').run(now + HOUR, id);
   db.prepare('DELETE FROM inventory WHERE id = ?').run(inventoryId);
+  bump(db, id, 'potions_used');
 }
 
 // ---------------- weapon hardening ----------------
@@ -77,6 +81,7 @@ export function hardenWeapon(db: DB, id: number, inventoryId: number, now: numbe
   assert(p.gold >= cost, 'no_gold', `Need ${cost} gold`);
   db.prepare('UPDATE players SET gold = gold - ? WHERE id = ?').run(cost, id);
   db.prepare('UPDATE inventory SET hardening = hardening + 1 WHERE id = ?').run(inventoryId);
+  bump(db, id, 'hardenings');
   return { hardening: row.hardening + 1, cost };
 }
 
@@ -184,6 +189,7 @@ function finishHunt(db: DB, id: number, p: Player, portions: number, now: number
   db.prepare('UPDATE players SET gold = gold + ?, hunt_started = NULL, hunt_until = NULL, hunt_portions = NULL WHERE id = ?').run(r.gold, id);
   const lv = awardXp(db, id, r.xp, now);
   gatherBlood(db, id, 'hunt', portions); // animals on the way
+  bump(db, id, 'hunt_gold', r.gold); bump(db, id, 'gold_earned', r.gold);
   return { ...r, xp: lv.xpGained, levelsGained: lv.levelsGained };
 }
 
@@ -244,7 +250,7 @@ export function collectWork(db: DB, id: number, now: number) {
   const wages = wagesFor(db, p, p.work_hours!);
   bump(db, id, 'work_hours', p.work_hours!); bump(db, id, 'work_gold', wages);
   clearWork(db, id, wages);
-  gatherBlood(db, id, 'work', p.work_hours!);
+  gatherBlood(db, id, 'work', p.work_hours!); bump(db, id, 'gold_earned', wages);
   return { wages, cancelled: false };
 }
 
@@ -256,7 +262,7 @@ export function cancelWork(db: DB, id: number, now: number) {
   const wages = wagesFor(db, p, Math.floor(worked / MIN) / 60);
   bump(db, id, 'work_hours', Math.floor(worked / HOUR)); bump(db, id, 'work_gold', wages);
   clearWork(db, id, wages);
-  gatherBlood(db, id, 'work', Math.floor(worked / HOUR));
+  gatherBlood(db, id, 'work', Math.floor(worked / HOUR)); bump(db, id, 'gold_earned', wages);
   return { wages, cancelled: true, minutesWorked: Math.floor(worked / MIN) };
 }
 

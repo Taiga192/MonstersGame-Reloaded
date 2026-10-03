@@ -6,6 +6,7 @@
 import { CFG, type ComponentKind } from '../config.ts';
 import type { DB } from '../db-core.ts';
 import { modsOf } from './mods.ts';
+import { bump } from './counters.ts';
 
 const mods = (db: DB, id: number) => modsOf(db.prepare('SELECT skill_mods FROM players WHERE id = ?').get(id) as { skill_mods: string });
 
@@ -30,6 +31,7 @@ export function gatherBlood(db: DB, playerId: number, source: BloodSource, units
   const amount = per * units * bonus * (1 + (mods(db, playerId).bloodGather ?? 0)); // Idol II and the skill board
   if (!(amount > 0)) return;
   db.prepare('UPDATE players SET blood = MIN(?, blood + ?) WHERE id = ?').run(tankSize(db, playerId), amount, playerId);
+  bump(db, playerId, 'blood_gathered', Math.max(1, Math.round(amount)));
 }
 
 /** True while this player's shrine is running: they are away, doing something automated, and have no protection from raids. */

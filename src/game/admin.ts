@@ -119,7 +119,7 @@ export function announce(db: DB, adminId: number, subject: unknown, body: unknow
   assert(typeof subject === 'string' && subject.trim().length >= 1 && subject.length <= 100, 'bad_subject', 'Subject: 1-100 characters');
   assert(typeof body === 'string' && body.trim().length >= 1 && body.length <= 2000, 'bad_body', 'Message: 1-2000 characters');
   const ids = db.prepare('SELECT id FROM players WHERE is_bot = 0').all() as { id: number }[];
-  for (const { id } of ids) systemMail(db, id, subject.trim(), body.trim(), now);
+  for (const { id } of ids) systemMail(db, id, subject.trim(), body.trim(), now, { kind: 'announce', link: '#/mail' });
   log(db, adminId, 'announce', `"${subject.trim()}" to ${ids.length} players`, now);
   return { sent: ids.length };
 }
@@ -127,7 +127,7 @@ export function announce(db: DB, adminId: number, subject: unknown, body: unknow
 /** Tables that describe a player's own data (deleted with the player). */
 const OWN_TABLES: [string, string][] = [
   ['sessions', 'player_id'], ['inventory', 'player_id'], ['sentinels', 'player_id'], ['hideouts', 'player_id'], ['ancestral_skills', 'player_id'],
-  ['bots', 'player_id'], ['skills', 'player_id'], ['shrine_components', 'player_id'], ['shrine', 'player_id'], ['dungeon', 'player_id'], ['dungeon_loot', 'player_id'], ['dungeon_weekly', 'player_id'], ['counters', 'player_id'],
+  ['bots', 'player_id'], ['notifications', 'player_id'], ['quest_base', 'player_id'], ['quest_state', 'player_id'], ['skills', 'player_id'], ['shrine_components', 'player_id'], ['shrine', 'player_id'], ['dungeon', 'player_id'], ['dungeon_loot', 'player_id'], ['dungeon_weekly', 'player_id'], ['counters', 'player_id'],
   ['acc_sets', 'player_id'], ['arena_points', 'player_id'], ['clan_perms', 'player_id'], ['clan_applications', 'player_id'],
   ['clan_war_members', 'player_id'], ['bites', 'link_player'], ['mail', 'to_id'], ['temple_listings', 'seller_id'],
 ];

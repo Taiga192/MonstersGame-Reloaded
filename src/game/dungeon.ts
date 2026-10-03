@@ -129,6 +129,7 @@ export function enterDungeon(db: DB, id: number, now: number) {
   const pool = Math.round(p.max_hp * (1 + (modsOf(p).dungeonHp ?? 0)));
   db.prepare('UPDATE dungeon SET active = 1, hp = ?, max_hp = ?, last_at = ?, runs = runs + 1, ready_at = 0 WHERE player_id = ?').run(pool, pool, now, id);
   db.prepare('UPDATE players SET dungeon_until = ? WHERE id = ?').run(now + CFG.dungeonIdleLimit, id);
+  bump(db, id, 'dungeon_runs');
   return { hp: pool, depth: r.depth };
 }
 
@@ -196,6 +197,7 @@ export function fight(db: DB, id: number, now: number, rng: Rng): DungeonFightRe
   ).run(depth, now, res.hpLeft, now, xpGained, depth - 1, choice ? JSON.stringify(choice) : null, readyAt, newCheckpoint ?? r.checkpoint, id);
   db.prepare('UPDATE players SET dungeon_until = ? WHERE id = ?').run(now + CFG.dungeonIdleLimit, id); // activity keeps the run alive
   bump(db, id, 'dungeon_levels');
+  if (mon.guardian) bump(db, id, 'dungeon_guardians');
   return { ...base, won: true, died: false, hpLeft: res.hpLeft, xp: xpGained, levelsGained: lv.levelsGained, drop, choice, nextDepth: depth, cooldownUntil: null, readyAt, checkpoint: newCheckpoint, component: part?.name ?? null };
 }
 
@@ -228,6 +230,7 @@ export function delveAuto(db: DB, id: number, startAt: number, fights: number, s
       addLoot(db, id, row[Math.floor(rng() * row.length)], Math.max(1, Math.round(CFG.dungeonLootValue(depth) * randRange(rng, 0.8, 1.2) * share * loot)), depth, false, now);
     }
     if (mon.guardian) {
+      bump(db, id, 'dungeon_guardians');
       const names = [...relicRow(depth)]; let best: RewardOption | null = null;
       for (let k = 0; k < CFG.dungeonRewardOptions && names.length; k++) {
         const [lo, hi] = CFG.dungeonRelicMultiplier;
@@ -245,7 +248,7 @@ export function delveAuto(db: DB, id: number, startAt: number, fights: number, s
     `UPDATE dungeon SET depth = ?, reached_at = ?, hp = 0, last_at = ?, kills = kills + ?, deaths = deaths + ?, runs = runs + 1, xp_week = xp_week + ?,
        best_ever = MAX(best_ever, ?), checkpoint = ?, cooldown_until = ?, active = 0, pending = NULL, ready_at = 0 WHERE player_id = ?`,
   ).run(depth, endAt, endAt, cleared, died ? 1 : 0, xpTotal, depth - 1, checkpoint, endAt + CFG.dungeonCooldown, id);
-  bump(db, id, 'dungeon_levels', cleared);
+  bump(db, id, 'dungeon_levels', cleared); bump(db, id, 'dungeon_runs');
   return { ran: true, cleared, died, xp: xpTotal, checkpoint: checkpoint > r.checkpoint ? checkpoint : null };
 }
 /** The shortest time one automated fight takes (also when the wait between fights is switched off). */
@@ -274,6 +277,7 @@ export function sellLoot(db: DB, id: number, lootId: number | 'all', now: number
   const gold = Math.round(rows.reduce((s, r) => s + r.value, 0) * CFG.rateGold * (1 + (modsOf(loadPlayer(db, id, now)).gold ?? 0)));
   db.prepare(`DELETE FROM dungeon_loot WHERE player_id = ? ${lootId === 'all' ? '' : 'AND id = ?'}`).run(...(lootId === 'all' ? [id] : [id, lootId]));
   db.prepare('UPDATE players SET gold = gold + ? WHERE id = ?').run(gold, id);
+  bump(db, id, 'dungeon_gold', gold); bump(db, id, 'gold_earned', gold);
   return { gold, count: rows.length };
 }
 

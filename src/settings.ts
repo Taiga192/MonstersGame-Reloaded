@@ -113,6 +113,8 @@ export const TUNABLES: Tunable[] = [
   t('Skills', 'skillCostKeystone', 'Skill points a keystone costs', 1, 20, { int: true }),
   t('Skills', 'skillRefundCostPerLevel', 'Taking back one skill node: gold per level', 0, 100000, { int: true }),
   t('Skills', 'skillRespecCostPerLevel', 'Resetting the whole board: gold per level', 0, 100000, { int: true }),
+  t('Quests', 'questsPerWeek', 'Quests offered per week', 3, 20, { int: true }),
+  t('Quests', 'questRewardScale', 'Quest rewards (x)', 0, 100, { help: '1 = normal. Gold, XP, blood, potions and loot of every quest.' }),
   t('Clans', 'clanMinLevel', 'Clan: minimum level', 1, 1000, { int: true }),
   t('Clans', 'clanBaseSlots', 'Clan: base member slots', 1, 1000, { int: true }),
   t('Clans', 'clanSlotsPerLevel', 'Clan: extra slots per domicile level', 0, 1000, { int: true }),

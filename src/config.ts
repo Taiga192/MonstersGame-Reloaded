@@ -152,6 +152,10 @@ export const CFG = {
   skillRefundCostPerLevel: 10, // gold per level of the character for taking back ONE node (it has to be a node at the end of a branch)
   skillRespecCostPerLevel: 50, // gold per level for resetting the whole board (cheaper than refunding many nodes one by one)
 
+  // ---- weekly quests (an addition that is not in the original game), see src/quests.ts ----
+  questsPerWeek: 10,
+  questRewardScale: 1, // multiplies every quest reward (gold, XP, blood, potions, loot)
+
   clanMinLevel: 3,
   clanBaseSlots: 10, // [ASSUMED]
   clanSlotsPerLevel: 5,

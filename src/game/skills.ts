@@ -5,6 +5,7 @@
 import { CFG } from '../config.ts';
 import type { DB } from '../db-core.ts';
 import { assert } from '../errors.ts';
+import { bump } from './counters.ts';
 import { aggregate, dominantRegion, isConnected, modText, NODE_BY_ID, NODES, nodeCost, ORIGINS, type ModKey, type Mods } from '../skills.ts';
 import { modsOf } from './mods.ts';
 import { loadPlayer } from './player.ts';
@@ -59,6 +60,7 @@ export function allocate(db: DB, id: number, nodeId: unknown, now: number) {
   if (!have.length) assert(node.kind === 'origin', 'not_a_start', 'Your first point has to go on a start node: that is your class');
   else assert(node.links.some((l) => set.has(l)), 'not_connected', 'You can only take a node that touches one you already have');
   store(db, id, [...have, node.id], have.length ? p.skill_start : node.id);
+  bump(db, id, 'skill_nodes');
 }
 
 /** Take one node back (costs gold). Everything that is left has to stay connected to the start node. */

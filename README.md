@@ -99,6 +99,17 @@ GitHub Pages can only host static files, so there is no server and no database s
 - [x] Automatic bots (personas, clans, wars, arena, market, dungeon; they start from zero)
 - [ ] Balance pass against real-game data
 
+## Notifications (you should never have to search for them)
+- A **bell with a number** in the header, and an **alert bar** under it that stays visible while you scroll. The bar shows what needs you right now, worked out from your character (a finished hunt or shift, unspent skill points, finished quests, unread mail, a dungeon guardian reward, an empty shrine) plus a chip for unread notifications. Chips are links.
+- **Notifications** tell you what happened while you were away: raids against you (also the ones you won), market sales, arena results, war declared or ended, being removed from a clan, level-ups, mail from players, announcements, new quests, the shrine running out of blood. The bell opens a list; clicking an item opens its page and marks it read. Full list: `#/notifications` (last 100 are kept).
+- The page asks the server every 20 seconds (and when you come back to the tab); new events pop up as toasts, the bell rings, and the browser tab title shows `(3)`. Optionally also **desktop notifications** while the tab is in the background (opt-in on the notifications page; a closed browser cannot be reached, there is no push service).
+
+## Weekly quests (a new mechanic)
+- A pool of **105 quests** (35 kinds x easy / normal / hard); every Monday **10 are drawn** (4 easy, 4 normal, 2 hard): never two of the same kind, at least 6 that a brand-new character can do, at most 3 that depend on luck (a clan war, a bite on your victim link). The draw is the same for everybody and different every week. Nothing is daily: you can plan the whole week.
+- Progress counts from Monday on, whatever you did before. Targets that are about gold or XP are scaled to your level the first time you look at the week.
+- A finished quest lets you **choose one of three rewards, which grow with your level**: gold, XP, or a special reward (animal blood, health potions or dungeon loot, depending on the kind of quest). Unclaimed rewards are gone on Monday.
+- Admin page: how many quests per week and a multiplier for all rewards.
+
 ## The skill board (a new mechanic)
 Every level gives **1 skill point** (a node costs 1-3 points, see below), spent on a board of **308 nodes** (Skills in the menu; pan with the mouse, zoom with the wheel).
 - **Seven regions**, each with its own start node (your **class**), three arms of ten nodes and a keystone at the tip: **Hunter** (hunting gold/XP, fewer failed hunts), **Warrior** (strength, raid plunder, health), **Shadow** (agility, short raid cooldown), **Delver** (dungeon XP, loot, health), **Warden** (defence, health, regeneration, keeping your gold), **Artisan** (wages, cheaper shop and training, better selling), **Acolyte** (shrine: more blood, less fuel).

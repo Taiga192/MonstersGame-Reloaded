@@ -3,6 +3,8 @@ import type { DB } from '../db-core.ts';
 import { assert } from '../errors.ts';
 import { loadPlayer } from './player.ts';
 import { systemMail } from './mail.ts';
+import { bump } from './counters.ts';
+import { notify, notifyClan } from './notify.ts';
 
 interface ClanRow { id: number; name: string; race: string; leader_id: number; domicile_level: number; treasury: number; is_open: number }
 
@@ -89,7 +91,7 @@ export function decideApplication(db: DB, actorId: number, applicantId: number, 
     assert(!loadPlayer(db, applicantId, now).clan_id, 'in_clan', 'That player already joined a clan');
     addMember(db, c, applicantId);
   } else db.prepare('DELETE FROM clan_applications WHERE clan_id = ? AND player_id = ?').run(c.id, applicantId);
-  systemMail(db, applicantId, `Clan ${c.name}: application ${accept ? 'accepted' : 'declined'}`, accept ? `Welcome to ${c.name}!` : `${c.name} declined your application.`, now);
+  systemMail(db, applicantId, `Clan ${c.name}: application ${accept ? 'accepted' : 'declined'}`, accept ? `Welcome to ${c.name}!` : `${c.name} declined your application.`, now, { kind: 'clan', link: '#/clan' });
 }
 
 export function setRecruiting(db: DB, actorId: number, open: boolean, now: number) {
@@ -132,6 +134,7 @@ export function kickMember(db: DB, actorId: number, memberId: number, now: numbe
   assert(actorId === c.leader_id || !permsOf(db, memberId).length, 'no_permission', 'Only the leader can kick officers', 403);
   db.prepare('UPDATE players SET clan_id = NULL, clan_role = NULL WHERE id = ?').run(memberId);
   db.prepare('DELETE FROM clan_perms WHERE player_id = ?').run(memberId);
+  notify(db, memberId, 'clan', `You were removed from ${c.name}`, 'A clan officer removed you from the clan.', '#/clan', now);
 }
 
 export function donate(db: DB, playerId: number, amount: number, now: number) {
@@ -140,6 +143,7 @@ export function donate(db: DB, playerId: number, amount: number, now: number) {
   assert(Number.isInteger(amount) && amount > 0 && amount <= p.gold, 'bad_amount', 'Invalid amount');
   db.prepare('UPDATE players SET gold = gold - ? WHERE id = ?').run(amount, playerId);
   db.prepare('UPDATE clans SET treasury = treasury + ? WHERE id = ?').run(amount, p.clan_id);
+  bump(db, playerId, 'clan_donated', amount);
 }
 
 export function upgradeDomicile(db: DB, actorId: number, now: number) {
@@ -174,6 +178,8 @@ export function declareWar(db: DB, actorId: number, targetClanId: number, now: n
   assert(!activeWarFor(db, c.id) && !activeWarFor(db, t.id), 'already_at_war', 'One of the clans is already at war');
   const id = Number(db.prepare('INSERT INTO clan_wars (aggressor_id, defender_id, started_at) VALUES (?,?,?)').run(c.id, t.id, now).lastInsertRowid);
   db.prepare('INSERT INTO clan_war_members (war_id, player_id, clan_id) SELECT ?, id, clan_id FROM players WHERE clan_id IN (?, ?)').run(id, c.id, t.id);
+  notifyClan(db, t.id, 'war', `${c.name} declared war on your clan!`, 'Open the war room and attack their members.', '#/clan/war', now);
+  notifyClan(db, c.id, 'war', `Your clan is at war with ${t.name}`, 'Open the war room and attack their members.', '#/clan/war', now, actorId);
   return id;
 }
 
@@ -183,8 +189,11 @@ function warOf(db: DB, actorId: number, now: number) {
   assert(w, 'no_war', 'Your clan is not at war');
   return { c, w };
 }
-const endWar = (db: DB, id: number, reason: string, now: number) =>
+const endWar = (db: DB, id: number, reason: string, now: number) => {
   db.prepare("UPDATE clan_wars SET status = 'ended', ended_at = ?, end_reason = ? WHERE id = ?").run(now, reason, id);
+  const w = db.prepare('SELECT aggressor_id, defender_id FROM clan_wars WHERE id = ?').get(id) as { aggressor_id: number; defender_id: number };
+  for (const cid of [w.aggressor_id, w.defender_id]) notifyClan(db, cid, 'war', 'The clan war is over', `It ended by ${reason}.`, '#/clan', now);
+};
 
 /** Peace: needs both leaders to agree. */
 export function offerPeace(db: DB, leaderId: number, now: number) {

@@ -7,6 +7,7 @@ import { resumeIfCeasefire, warBetween } from './clan.ts';
 import { bump } from './counters.ts';
 import { simulate } from './combat.ts';
 import { gatherBlood, isAutomated } from './blood.ts';
+import { notify } from './notify.ts';
 import { modsOf } from './mods.ts';
 import { attackCooldownOf, assertFree, awardXp, isBusy, battleStats, equipmentLoadout, hideoutTotal, loadPlayer, setHp, type Player } from './player.ts';
 
@@ -123,6 +124,8 @@ export function fight(db: DB, a: Player, d: Player, now: number, rng: Rng): Raid
   awardXp(db, a.id, xpA, now);
   awardXp(db, d.id, xpD, now);
   gatherBlood(db, a.id, 'raid');
+  bump(db, a.id, 'raids'); if (war) bump(db, a.id, 'war_attacks');
+  notify(db, d.id, 'raid', `${a.name} raided you`, attackerWon ? `${a.name} won and took ${gold} gold from you.` : `You fought off ${a.name}!`, war ? '#/clan/war' : '#/messages', now);
 
   return { battleId, winner: winner.name, rounds: res.rounds, gold, xpAttacker: xpA, xpDefender: xpD, warId: war?.id ?? null, attackerHp: res.hpA, defenderHp: res.hpB };
 }

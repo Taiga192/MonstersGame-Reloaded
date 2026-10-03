@@ -432,6 +432,30 @@
     "prompt": "A lone frightened villager on a foggy road at night, seen from a predator eye view. wide cinematic composition, atmospheric depth, empty calmer area on the left for a title overlay. dark gothic fantasy, painterly digital illustration, deep crimson and violet palette with warm amber highlights, moody rim lighting, rich detail, cohesive game art style, no text, no watermark, no signature."
   },
   {
+    "id": "banners/quests",
+    "group": "Banners",
+    "priority": 2,
+    "w": 1200,
+    "h": 240,
+    "transparent": false,
+    "subject": "A gothic notice board covered in parchment quests and wax seals, lit by candles, a raven perched on top",
+    "used": "Top banner of the quests page",
+    "kind": "scene",
+    "prompt": "A gothic notice board covered in parchment quests and wax seals, lit by candles, a raven perched on top. wide cinematic composition, atmospheric depth, empty calmer area on the left for a title overlay. dark gothic fantasy, painterly digital illustration, deep crimson and violet palette with warm amber highlights, moody rim lighting, rich detail, cohesive game art style, no text, no watermark, no signature."
+  },
+  {
+    "id": "banners/notifications",
+    "group": "Banners",
+    "priority": 2,
+    "w": 1200,
+    "h": 240,
+    "transparent": false,
+    "subject": "A raven landing at a candlelit window with a sealed message in its beak",
+    "used": "Top banner of the notifications page",
+    "kind": "scene",
+    "prompt": "A raven landing at a candlelit window with a sealed message in its beak. wide cinematic composition, atmospheric depth, empty calmer area on the left for a title overlay. dark gothic fantasy, painterly digital illustration, deep crimson and violet palette with warm amber highlights, moody rim lighting, rich detail, cohesive game art style, no text, no watermark, no signature."
+  },
+  {
     "id": "banners/skills",
     "group": "Banners",
     "priority": 2,
@@ -562,6 +586,18 @@
     "used": "Header menu",
     "kind": "icon",
     "prompt": "Menu icon: a trophy medal. single centered subject, isolated on a transparent background, slight three-quarter view, soft top-left lighting, clean silhouette readable at 64px, game inventory icon. dark gothic fantasy, painterly digital illustration, deep crimson and violet palette with warm amber highlights, moody rim lighting, rich detail, cohesive game art style, no text, no watermark, no signature."
+  },
+  {
+    "id": "nav/quests",
+    "group": "Navigation icons",
+    "priority": 1,
+    "w": 64,
+    "h": 64,
+    "transparent": true,
+    "subject": "Menu icon: a rolled parchment scroll with a wax seal",
+    "used": "Header menu",
+    "kind": "icon",
+    "prompt": "Menu icon: a rolled parchment scroll with a wax seal. single centered subject, isolated on a transparent background, slight three-quarter view, soft top-left lighting, clean silhouette readable at 64px, game inventory icon. dark gothic fantasy, painterly digital illustration, deep crimson and violet palette with warm amber highlights, moody rim lighting, rich detail, cohesive game art style, no text, no watermark, no signature."
   },
   {
     "id": "nav/skills",

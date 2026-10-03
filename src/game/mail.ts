@@ -1,12 +1,16 @@
 import { CFG, HOUR } from '../config.ts';
 import type { DB } from '../db-core.ts';
 import { assert } from '../errors.ts';
+import { notify } from './notify.ts';
+import { bump } from './counters.ts';
 
 /** System messages have from_id = NULL (arena results, market sales, ...). */
-export function systemMail(db: DB, toId: number, subject: string, body: string, now: number) {
+/** `opts.kind` / `opts.link` say how the notification (bell) for this message looks and where it leads. */
+export function systemMail(db: DB, toId: number, subject: string, body: string, now: number, opts: { kind?: string; link?: string } = {}) {
   // bots never read mail: skip it instead of piling up thousands of rows
   if ((db.prepare('SELECT is_bot FROM players WHERE id = ?').get(toId) as { is_bot: number } | undefined)?.is_bot) return;
   db.prepare('INSERT INTO mail (from_id, to_id, subject, body, sent_at) VALUES (NULL,?,?,?,?)').run(toId, subject, body, now);
+  notify(db, toId, opts.kind ?? 'mail', subject, body, opts.link ?? '#/mail', now);
 }
 
 export function sendMail(db: DB, fromId: number, toName: string, subject: string, body: string, now: number) {
@@ -19,6 +23,8 @@ export function sendMail(db: DB, fromId: number, toName: string, subject: string
   const recent = (db.prepare('SELECT COUNT(*) n FROM mail WHERE from_id = ? AND sent_at > ?').get(fromId, now - HOUR) as { n: number }).n;
   assert(recent < CFG.mailPerHour, 'rate_limited', `You can send ${CFG.mailPerHour} messages per hour`, 429);
   const id = Number(db.prepare('INSERT INTO mail (from_id, to_id, subject, body, sent_at) VALUES (?,?,?,?,?)').run(fromId, to.id, subject, body, now).lastInsertRowid);
+  bump(db, fromId, 'mails_sent');
+  notify(db, to.id, 'mail', `Mail from ${(db.prepare('SELECT name FROM players WHERE id = ?').get(fromId) as { name: string }).name}`, subject, '#/mail', now);
   return { id };
 }
 

@@ -9,7 +9,8 @@ import { seeded } from '../src/rng.ts';
 /** Loads the real frontend into jsdom, wired straight to the in-process API. */
 async function boot() {
   const clock = { offset: 0 };
-  const app = createApp({ db: openDb(), now: () => 1_800_000_000_000 + clock.offset, rng: seeded(7), devClock: clock });
+  const db = openDb();
+  const app = createApp({ db, now: () => 1_800_000_000_000 + clock.offset, rng: seeded(7), devClock: clock });
   const dom = new JSDOM(readFileSync('public/index.html', 'utf8'), { url: 'http://localhost/', runScripts: 'outside-only', pretendToBeVisual: true });
   const w = dom.window as any;
   const errors: string[] = [];
@@ -28,7 +29,7 @@ async function boot() {
     const el = [...doc.querySelectorAll<HTMLElement>(sel)].find((e) => !text || e.textContent!.includes(text) );
     assert.ok(el, `no element ${sel} ${text ?? ''}`); assert.ok(!(el as HTMLButtonElement).disabled, `${sel} ${text} is disabled`); el.click(); return el;
   };
-  return { w, doc, until, view, go, click, errors, close: () => w.close() };
+  return { w, doc, db, until, view, go, click, errors, close: () => w.close() };
 }
 
 test('UI: register, browse every page, train, raid with bots, dev tools', async () => {
@@ -752,6 +753,89 @@ test('UI: the skill board — 250+ nodes, pick a class, take connected nodes, se
     // the overview shows the points
     await go('#/overview', 'Attributes');
     assert.match(view().textContent!, /Skill points: 9/);
+    assert.deepEqual(errors, []);
+  } finally { close(); }
+});
+
+test('UI: notifications — a bell with a number, an alert bar you cannot miss, toasts for new events, the tab title, and a list you can clear', async () => {
+  const { w, doc, db, until, view, go, errors, close } = await boot();
+  try {
+    await until(() => !!doc.querySelector('#reg'), 'login page'); await new Promise((r) => setTimeout(r, 50)); // the page attaches its form handlers a tick after rendering
+    (doc.querySelector('#reg [name=name]') as HTMLInputElement).value = 'Notified';
+    (doc.querySelector('#reg [name=password]') as HTMLInputElement).value = 'secret12';
+    doc.querySelector('#reg')!.dispatchEvent(new w.Event('submit', { cancelable: true }));
+    await until(() => view().textContent!.includes('Attributes'), 'overview');
+    const id = (db.prepare('SELECT id FROM players').get() as { id: number }).id;
+    const bar = () => doc.querySelector('#alerts')!, bell = () => doc.querySelector('#bell')!;
+    // what needs you is on the bar from the start (a level 1 character has a skill point), and it is a link
+    assert.match(bar().textContent!, /1 skill point to spend/);
+    assert.equal((bar().querySelector('a.chip.good') as HTMLAnchorElement).getAttribute('href'), '#/skills');
+    assert.equal(bell().querySelector('.badge'), null, 'no notifications yet');
+    assert.match(doc.title, /^\(1\) /, 'even the tab title counts what needs you');
+    // something happens while you are on the page: the next poll shows it
+    const at = 1_800_000_000_000;
+    db.prepare("INSERT INTO notifications (player_id, kind, title, body, link, at) VALUES (?, 'raid', 'Rival raided you', 'Rival won and took 50 gold from you.', '#/messages', ?)").run(id, at);
+    db.prepare("INSERT INTO notifications (player_id, kind, title, body, link, at) VALUES (?, 'market', 'Blood Temple: item sold', 'You received 90 gold.', '#/town/temple', ?)").run(id, at);
+    doc.dispatchEvent(new w.Event('visibilitychange')); // (the page polls on its own every 20 s and as soon as the tab is looked at again)
+    await until(() => bell().textContent!.includes('2'), 'the bell shows 2');
+    assert.match(bar().textContent!, /2 new notifications/);
+    assert.match(doc.querySelector('#toast')!.textContent!, /Blood Temple: item sold|Rival raided you/, 'a toast announced it');
+    assert.match(doc.title, /^\(3\) /, 'the tab title counts notifications and alerts: 2 + 1');
+    // the dropdown lists them, newest first, with a link each
+    (bell() as HTMLElement).click();
+    await until(() => doc.querySelectorAll('#notif-drop a.note').length === 2, 'dropdown lists the notifications');
+    const items = [...doc.querySelectorAll('#notif-drop a.note')] as HTMLAnchorElement[];
+    assert.match(items[0].textContent!, /Blood Temple: item sold/); assert.equal(items[0].getAttribute('href'), '#/town/temple'); assert.match(items[1].textContent!, /Rival raided you/);
+    assert.ok(items.every((a) => a.classList.contains('unread')));
+    // clicking one opens its page and marks it read
+    items[1].click();
+    await until(() => !bell().textContent!.includes('2') && bell().textContent!.includes('1'), 'one is read');
+    assert.equal((db.prepare('SELECT COUNT(*) n FROM notifications WHERE is_read = 0').get() as { n: number }).n, 1);
+    assert.equal(doc.querySelector('#notif-drop')!.hasAttribute('hidden'), true, 'the dropdown closes');
+    // the full list and "mark all read"
+    await go('#/notifications', 'Rival raided you');
+    assert.match(view().textContent!, /Blood Temple: item sold/);
+    (doc.querySelector('[data-do="/notifications/read"]') as HTMLElement).click();
+    await until(() => !bell().querySelector('.badge'), 'everything is read');
+    assert.doesNotMatch(bar().textContent!, /new notification/);
+    assert.deepEqual(errors, []);
+  } finally { close(); }
+});
+
+test('UI: weekly quests — ten quests, progress, choose one of three rewards, planning ahead', async () => {
+  const { w, doc, db, until, view, go, errors, close } = await boot();
+  try {
+    await until(() => !!doc.querySelector('#reg'), 'login page'); await new Promise((r) => setTimeout(r, 50)); // the page attaches its form handlers a tick after rendering
+    (doc.querySelector('#reg [name=name]') as HTMLInputElement).value = 'Questy';
+    (doc.querySelector('#reg [name=password]') as HTMLInputElement).value = 'secret12';
+    doc.querySelector('#reg')!.dispatchEvent(new w.Event('submit', { cancelable: true }));
+    await until(() => view().textContent!.includes('Attributes'), 'overview');
+    assert.ok(doc.querySelector('#top nav')!.textContent!.includes('Quests'), 'menu entry');
+    await go('#/quests', 'Weekly quests');
+    await until(() => doc.querySelectorAll('#view .quest').length === 10, 'ten quests');
+    assert.match(view().textContent!, /new quests in/); assert.match(view().textContent!, /0 of 10 rewards taken/);
+    assert.equal(doc.querySelectorAll('#view .quest .pill.easy').length, 4); assert.equal(doc.querySelectorAll('#view .quest .pill.hard').length, 2);
+    assert.equal(doc.querySelectorAll('#view .quest button[data-do="/quests/claim"]').length, 0, 'nothing is done yet, the rewards are only shown');
+    assert.ok(doc.querySelectorAll('#view .quest .pill[title]').length >= 27, 'three rewards on each quest to plan with');
+    // finish one quest (the way the game would: the counter moves)
+    const id = (db.prepare('SELECT id FROM players').get() as { id: number }).id;
+    const rows = db.prepare('SELECT quest_id, target FROM quest_state WHERE player_id = ?').all(id) as { quest_id: string; target: number }[];
+    const { QUESTS } = await import('../src/quests.ts');
+    const q = rows.find((r) => { const d = QUESTS.find((x) => x.id === r.quest_id)!; return d.minLevel <= 1; })!;
+    db.prepare("INSERT INTO counters (player_id, key, value) VALUES (?, ?, ?) ON CONFLICT(player_id, key) DO UPDATE SET value = value + excluded.value").run(id, QUESTS.find((x) => x.id === q.quest_id)!.counter, q.target);
+    doc.dispatchEvent(new w.Event('visibilitychange'));
+    await until(() => /quest is done|quests are done/.test(doc.querySelector('#alerts')!.textContent!), 'the alert bar says a quest is done');
+    await go('#/overview', 'Attributes'); await go('#/quests', 'Done! Choose your reward');
+    const buttons = [...doc.querySelectorAll('#view .quest.done button[data-do="/quests/claim"]')] as HTMLElement[];
+    assert.equal(buttons.length, 3, 'gold, XP and the special reward');
+    assert.match(buttons[0].textContent!, /gold/); assert.match(buttons[1].textContent!, /XP/);
+    const gold0 = (db.prepare('SELECT gold g FROM players WHERE id = ?').get(id) as { g: number }).g;
+    buttons[0].click();
+    await until(() => /1 of 10 rewards taken/.test(view().textContent!), 'claimed');
+    assert.match(doc.querySelector('#toast')!.textContent!, /Quest done/); assert.match(view().textContent!, /Reward taken: gold/);
+    assert.ok((db.prepare('SELECT gold g FROM players WHERE id = ?').get(id) as { g: number }).g > gold0);
+    assert.equal(doc.querySelectorAll('#view .quest.done').length, 0);
+    assert.doesNotMatch(doc.querySelector('#alerts')!.textContent!, /quest/);
     assert.deepEqual(errors, []);
   } finally { close(); }
 });

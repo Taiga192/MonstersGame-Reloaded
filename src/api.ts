@@ -8,6 +8,9 @@ import * as auth from './game/auth.ts';
 import * as admin from './game/admin.ts';
 import * as shrine from './game/shrine.ts';
 import * as skills from './game/skills.ts';
+import * as quests from './game/quests.ts';
+import * as notes from './game/notify.ts';
+import { alertsFor } from './game/alerts.ts';
 import { maxHpBonus, pointsTotal } from './game/skills.ts';
 import { boardForClient } from './skills.ts';
 import { discounted, modsOf } from './game/mods.ts';
@@ -74,6 +77,7 @@ export function createApi({ db, now, rng, devClock, assets, middleware = [], glo
   const act = <T>(fn: (id: number, b: Record<string, any>, c: Context) => T) => async (c: Context) => {
     const id = me(c); const b = await body(c);
     return c.json(tx(db, () => {
+      quests.ensureWeek(db, now()); // a new quest week starts before any counter moves in it
       shrine.settle(db, id, now(), rng); // what the shrine did while you were away is paid before anything else happens
       if (MANUAL.has(c.req.path)) shrine.pause(db, id, now(), rng);
       return fn(id, b, c);
@@ -119,10 +123,11 @@ export function createApi({ db, now, rng, devClock, assets, middleware = [], glo
   app.get('/api/me', (c) => {
     const id = me(c);
     return c.json(tx(db, () => {
-      const t = now(); shrine.settle(db, id, t, rng); const p = loadPlayer(db, id, t);
+      const t = now(); quests.ensureWeek(db, t); shrine.settle(db, id, t, rng); const p = loadPlayer(db, id, t);
       const { pass_hash: _, ...pub } = p;
       return {
         ...pub, blood: Math.floor(p.blood * 10) / 10, bloodMax: tankSize(db, id), shrine: (db.prepare('SELECT status FROM shrine WHERE player_id = ?').get(id) as { status: string } | undefined)?.status ?? null,
+        unreadNotifications: notes.unreadCount(db, id), notificationCursor: notes.latestId(db, id), questsReady: quests.readyCount(db, id, t), alerts: alertsFor(db, id, t),
         skillMods: modsOf(p), skillPoints: Math.max(0, pointsTotal(p.level) - skills.usedPoints(db, id)),
         isAdmin: admin.isAdmin(db, id, singlePlayer), hp: Math.floor(p.hp), serverNow: t, xpToNext: CFG.xpToNext(p.level),
         attackReadyAt: p.last_attack_at + attackCooldownOf(p),
@@ -176,6 +181,19 @@ export function createApi({ db, now, rng, devClock, assets, middleware = [], glo
   app.post('/api/work/collect', act((id) => eco.collectWork(db, id, now())));
   app.post('/api/work/cancel', act((id) => eco.cancelWork(db, id, now())));
   app.post('/api/ancestral/challenge', act((id) => eco.ancestralChallenge(db, id, now(), rng)));
+
+  // ---- notifications and the alert bar ----
+  app.get('/api/notifications', (c) => { const id = me(c); return c.json({ items: notes.listNotifications(db, id, Number(c.req.query('limit') ?? 50)), unread: notes.unreadCount(db, id) }); });
+  // the page asks this every few seconds: what is new since the last notification it saw, how many are unread, what needs doing
+  app.get('/api/notifications/poll', (c) => {
+    const id = me(c);
+    return c.json(tx(db, () => { const t = now(); quests.ensureWeek(db, t); shrine.settle(db, id, t, rng); return { serverNow: t, unread: notes.unreadCount(db, id), items: notes.newerThan(db, id, Number(c.req.query('after'))), alerts: alertsFor(db, id, t) }; }));
+  });
+  app.post('/api/notifications/read', act((id, b) => { notes.markRead(db, id, b); return { unread: notes.unreadCount(db, id) }; }));
+
+  // ---- weekly quests ----
+  app.get('/api/quests', (c) => { const id = me(c); return c.json(tx(db, () => quests.questState(db, id, now()))); });
+  app.post('/api/quests/claim', act((id, b) => quests.claim(db, id, b.quest, b.choice, now())));
 
   // ---- skill board: passive bonuses, 1 point per level ----
   app.get('/api/skills/board', (c) => c.json(boardForClient())); // the same for everybody

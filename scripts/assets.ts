@@ -66,6 +66,8 @@ const banners: [string, string][] = [
   ['highscore', 'A grand hall of fame with carved names, statues and a towering throne'],
   ['profile', 'A dark portrait gallery with candles'],
   ['bite', 'A lone frightened villager on a foggy road at night, seen from a predator eye view'],
+  ['quests', 'A gothic notice board covered in parchment quests and wax seals, lit by candles, a raven perched on top'],
+  ['notifications', 'A raven landing at a candlelit window with a sealed message in its beak'],
   ['skills', 'A vast night sky of glowing constellations connected by thin lines of light, like a map of destinies above a gothic city'],
   ['shrine', 'A moss-covered blood shrine in a dark forest clearing at dusk, candles, bones and a glowing basin of crimson liquid'],
 ];
@@ -74,7 +76,7 @@ for (const [k, s] of banners) add('Banners', `banners/${k}`, 1200, 240, false, s
 // ---------- navigation & UI icons ----------
 const nav: [string, string][] = [['overview', 'a hooded figure bust'], ['raid', 'crossed dagger and claw'], ['hunt', 'a glowing predator eye'], ['dungeon', 'a torch-lit archway leading down into darkness'], ['town', 'a gothic house with a lantern'],
   ['hideout', 'a fortified tower'], ['ancestral', 'a glowing standing stone'], ['arena', 'crossed swords over a round arena'], ['acc', 'a trophy medal'],
-  ['skills', 'a glowing constellation of connected stars'], ['clan', 'a war banner on a pole'], ['mail', 'a sealed envelope with a wax seal'], ['messages', 'a battle report scroll'], ['highscore', 'a crown']];
+  ['quests', 'a rolled parchment scroll with a wax seal'], ['skills', 'a glowing constellation of connected stars'], ['clan', 'a war banner on a pole'], ['mail', 'a sealed envelope with a wax seal'], ['messages', 'a battle report scroll'], ['highscore', 'a crown']];
 for (const [k, s] of nav) add('Navigation icons', `nav/${k}`, 64, 64, true, `Menu icon: ${s}`, 1, 'Header menu');
 const stat: [string, string][] = [['str', 'a clenched fist'], ['def', 'a shield'], ['agi', 'a winged boot'], ['sta', 'a beating heart in armor'], ['dex', 'a magnifying eye']];
 for (const [k, s] of stat) add('Stat & resource icons', `icons/stat_${k}`, 64, 64, true, `Stat icon: ${s}`, 1, 'Attributes table');
