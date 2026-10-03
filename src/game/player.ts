@@ -16,7 +16,7 @@ export interface Player {
   ancestral_at: number; ancestral_wins: number; potion_stat_until: number; vitality_hp: number;
   referrer_id: number | null; referral_paid: number;
   clan_id: number | null; clan_role: string | null;
-  wins: number; losses: number; is_bot: number; is_admin: number; created_at: number;
+  wins: number; losses: number; is_bot: number; is_admin: number; blood: number; created_at: number;
 }
 
 export type Stats = Record<Stat, number>;
@@ -85,7 +85,7 @@ export function equipmentLoadout(db: DB, p: Player): Loadout {
   const best = new Map<string, Cand>();
   const score = (c: Cand) => Object.values(c.b).reduce((a, b) => a + b, 0) + (c.def.goldBonus ?? 0) * 1000 + (c.def.huntBonus ?? 0);
   for (const { id, def, hardening } of ownedItems(db, p.id)) {
-    if (def.slot === 'potion' || def.minLevel > p.level) continue;
+    if (def.slot === 'potion' || def.slot === 'component' || def.minLevel > p.level) continue;
     const c: Cand = { id, def, b: effectiveBonus(def, hardening) };
     const primary = MAIN_STATS.find((s) => def.bonus[s]) ?? def.ringKind ?? def.key;
     const cat = def.slot === 'ring' ? `ring:${def.ringKind}` : `${def.slot}:${primary}`;

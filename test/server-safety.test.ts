@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:net';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -173,9 +174,10 @@ test('backups: a consistent, openable copy of the live database; old ones are pr
 });
 
 // ---------------------------------------------------------------- the real server process
+const freePort = () => new Promise<number>((res, rej) => { const srv = createServer(); srv.listen(0, '127.0.0.1', () => { const { port } = srv.address() as { port: number }; srv.close(() => res(port)); }); srv.on('error', rej); });
 test('the real server: production mode, CORS from the environment, graceful shutdown leaves a final backup', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'mg-server-'));
-  const port = 3300 + Math.floor(Math.random() * 400);
+  const port = await freePort(); // (a port the OS says is free right now: random guesses can collide with other test processes)
   const child = spawn('node', ['src/server.ts'], { env: { ...process.env, NODE_ENV: 'production', PORT: String(port), DB_PATH: join(dir, 'game.db'), BOTS: '5', CORS_ORIGINS: 'https://*.itch.zone', BACKUP_DIR: join(dir, 'b'), BACKUP_EVERY_HOURS: '6' }, stdio: ['ignore', 'pipe', 'pipe'] });
   let log = '';
   child.stdout.on('data', (d) => (log += d)); child.stderr.on('data', (d) => (log += d));

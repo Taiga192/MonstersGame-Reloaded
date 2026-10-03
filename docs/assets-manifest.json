@@ -3108,6 +3108,78 @@
     "prompt": "Amulet of Healing: green-gem amulet on a silver chain glowing softly. single centered subject, isolated on a transparent background, slight three-quarter view, soft top-left lighting, clean silhouette readable at 64px, game inventory icon. dark gothic fantasy, painterly digital illustration, deep crimson and violet palette with warm amber highlights, moody rim lighting, rich detail, cohesive game art style, no text, no watermark, no signature."
   },
   {
+    "id": "items/shrine_chalice_1",
+    "group": "Items",
+    "priority": 2,
+    "w": 256,
+    "h": 256,
+    "transparent": true,
+    "subject": "Blood Chalice I: Blood Chalice I",
+    "used": "Store, inventory, temple (component)",
+    "kind": "icon",
+    "prompt": "Blood Chalice I: Blood Chalice I. single centered subject, isolated on a transparent background, slight three-quarter view, soft top-left lighting, clean silhouette readable at 64px, game inventory icon. dark gothic fantasy, painterly digital illustration, deep crimson and violet palette with warm amber highlights, moody rim lighting, rich detail, cohesive game art style, no text, no watermark, no signature."
+  },
+  {
+    "id": "items/shrine_chalice_2",
+    "group": "Items",
+    "priority": 2,
+    "w": 256,
+    "h": 256,
+    "transparent": true,
+    "subject": "Blood Chalice II: Blood Chalice II",
+    "used": "Store, inventory, temple (component)",
+    "kind": "icon",
+    "prompt": "Blood Chalice II: Blood Chalice II. single centered subject, isolated on a transparent background, slight three-quarter view, soft top-left lighting, clean silhouette readable at 64px, game inventory icon. dark gothic fantasy, painterly digital illustration, deep crimson and violet palette with warm amber highlights, moody rim lighting, rich detail, cohesive game art style, no text, no watermark, no signature."
+  },
+  {
+    "id": "items/shrine_altar_1",
+    "group": "Items",
+    "priority": 2,
+    "w": 256,
+    "h": 256,
+    "transparent": true,
+    "subject": "Bone Altar I: Bone Altar I",
+    "used": "Store, inventory, temple (component)",
+    "kind": "icon",
+    "prompt": "Bone Altar I: Bone Altar I. single centered subject, isolated on a transparent background, slight three-quarter view, soft top-left lighting, clean silhouette readable at 64px, game inventory icon. dark gothic fantasy, painterly digital illustration, deep crimson and violet palette with warm amber highlights, moody rim lighting, rich detail, cohesive game art style, no text, no watermark, no signature."
+  },
+  {
+    "id": "items/shrine_altar_2",
+    "group": "Items",
+    "priority": 2,
+    "w": 256,
+    "h": 256,
+    "transparent": true,
+    "subject": "Bone Altar II: Bone Altar II",
+    "used": "Store, inventory, temple (component)",
+    "kind": "icon",
+    "prompt": "Bone Altar II: Bone Altar II. single centered subject, isolated on a transparent background, slight three-quarter view, soft top-left lighting, clean silhouette readable at 64px, game inventory icon. dark gothic fantasy, painterly digital illustration, deep crimson and violet palette with warm amber highlights, moody rim lighting, rich detail, cohesive game art style, no text, no watermark, no signature."
+  },
+  {
+    "id": "items/shrine_idol_1",
+    "group": "Items",
+    "priority": 2,
+    "w": 256,
+    "h": 256,
+    "transparent": true,
+    "subject": "Idol of the Hunt I: Idol of the Hunt I",
+    "used": "Store, inventory, temple (component)",
+    "kind": "icon",
+    "prompt": "Idol of the Hunt I: Idol of the Hunt I. single centered subject, isolated on a transparent background, slight three-quarter view, soft top-left lighting, clean silhouette readable at 64px, game inventory icon. dark gothic fantasy, painterly digital illustration, deep crimson and violet palette with warm amber highlights, moody rim lighting, rich detail, cohesive game art style, no text, no watermark, no signature."
+  },
+  {
+    "id": "items/shrine_idol_2",
+    "group": "Items",
+    "priority": 2,
+    "w": 256,
+    "h": 256,
+    "transparent": true,
+    "subject": "Idol of the Hunt II: Idol of the Hunt II",
+    "used": "Store, inventory, temple (component)",
+    "kind": "icon",
+    "prompt": "Idol of the Hunt II: Idol of the Hunt II. single centered subject, isolated on a transparent background, slight three-quarter view, soft top-left lighting, clean silhouette readable at 64px, game inventory icon. dark gothic fantasy, painterly digital illustration, deep crimson and violet palette with warm amber highlights, moody rim lighting, rich detail, cohesive game art style, no text, no watermark, no signature."
+  },
+  {
     "id": "items/potion_heal",
     "group": "Items",
     "priority": 2,

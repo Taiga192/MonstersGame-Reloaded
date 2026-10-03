@@ -125,6 +125,26 @@ export const CFG = {
   dungeonLootValue: (depth: number) => Math.round(15 + 4 * depth ** 1.15),
   dungeonRelicMultiplier: [4, 8] as [number, number], // guardian rewards are worth 4-8x an ordinary drop of that depth
 
+  // ---- the shrine (an addition that is not in the original game): automates hunting and work while you are away ----
+  shrineLevel: 10, // unlocked at this level
+  shrinePrice: 1500, // gold, from the NPC shop
+  shrineBaseEfficiency: 0.6, // an automated hour pays this share of a manual one ...
+  shrineEfficiencyPerUpgrade: 0.025, // ... plus this much for every upgrade (component tier) installed
+  shrineMaxEfficiency: 0.75, // however many upgrades: automation always stays clearly weaker than playing
+  shrineSlots: 3, // steps in the routine (an Altar adds more)
+  shrineTankPerTier: 60, // Blood Chalice: tank size per tier
+  shrineSlotsPerTier: 1, // Bone Altar: routine steps per tier
+  shrineBloodBonus: 0.5, // Idol of the Hunt II: this much more blood gathered
+  componentDropLargeTown: 0.006, // chance per large town hit while hunting to find a tier 2 shrine part
+  componentDropGuardian: 0.1, // chance to find one when a dungeon guardian falls
+  shrineBloodPerHour: 1, // fuel an automated hour costs (a manual hunt portion or work hour gathers 1: playing a little funds a lot of automation)
+  shrineTank: 60, // blood the shrine can hold (also the cap on how long it can run unattended: 60 h at 1 per hour; Blood Chalices add more)
+  bloodPerHuntPortion: 1, // animal blood gathered on the way by ANY manual action ...
+  bloodPerWorkHour: 1,
+  bloodPerRaid: 1,
+  bloodPerDungeonFight: 1,
+  shrineRaidLossCap: 0.03, // a raid takes at most this share of the gold of a player whose shrine is running (there is no protection while automated)
+
   clanMinLevel: 3,
   clanBaseSlots: 10, // [ASSUMED]
   clanSlotsPerLevel: 5,
@@ -136,13 +156,18 @@ export const CFG = {
 
 // ---------- catalogs [ASSUMED content; structure per manual] ----------
 
-export type ItemSlot = 'weapon' | 'armor' | 'ring' | 'amulet' | 'potion';
+export type ItemSlot = 'weapon' | 'armor' | 'ring' | 'amulet' | 'potion' | 'component';
+export type ComponentKind = 'chalice' | 'altar' | 'idol';
 export interface ItemDef {
   key: string; name: string; slot: ItemSlot; minLevel: number; price: number;
   bonus: Partial<Record<Stat, number>>;
   ringKind?: 'stat' | 'battle' | 'hunt'; // rings only; best of each kind counts
   huntBonus?: number; goldBonus?: number; // hunt units / raid gold %
   potion?: 'heal' | 'stat' | 'maxhp';
+  /** shrine part: installed in the shrine (not worn); every tier installed is one "upgrade" (+2.5 % efficiency) */
+  component?: { kind: ComponentKind; tier: 1 | 2 };
+  /** not sold by the NPC shop: found by playing or bought from other players */
+  noShop?: boolean;
 }
 
 /**
@@ -194,6 +219,11 @@ export const ITEMS: ItemDef[] = [
   })),
   { key: 'amulet_perfection', name: 'Amulet of Perfection', slot: 'amulet', minLevel: 30, price: 5000, bonus: {}, huntBonus: 9999 },
   { key: 'amulet_healing', name: 'Amulet of Healing', slot: 'amulet', minLevel: 30, price: 3000, bonus: {} },
+  // shrine parts: tier 1 from the NPC shop (for everybody), tier 2 only found by playing (large towns, dungeon guardians) or traded
+  ...(['chalice', 'altar', 'idol'] as const).flatMap((kind) => ([1, 2] as const).map((tier): ItemDef => ({
+    key: `shrine_${kind}_${tier}`, name: `${{ chalice: 'Blood Chalice', altar: 'Bone Altar', idol: 'Idol of the Hunt' }[kind]} ${tier === 1 ? 'I' : 'II'}`, slot: 'component', minLevel: 10,
+    price: tier === 1 ? 800 : 6000, bonus: {}, component: { kind, tier }, noShop: tier === 2,
+  }))),
   { key: 'potion_heal', name: 'Health Potion', slot: 'potion', minLevel: 1, price: 40, bonus: {}, potion: 'heal' },
   { key: 'potion_maxhp', name: 'Vitality Potion', slot: 'potion', minLevel: 1, price: 500, bonus: {}, potion: 'maxhp' },
 ];

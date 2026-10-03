@@ -76,14 +76,14 @@ function resultMessage(path, r) {
   if (path === '/dungeon/enter') return { text: 'You descend into the dungeon…' };
   if (path === '/dungeon/leave') return { text: 'You climb out. Your progress is saved.' };
   if (path === '/dungeon/fight') return r.won
-    ? { text: `Level ${r.depth} cleared! +${r.xp} XP${r.drop ? `, found ${r.drop.name} (${r.drop.value}g)` : ''}${r.choice ? ' — the guardian offers you a reward!' : ''}${r.checkpoint ? ` — checkpoint: level ${r.checkpoint} is saved!` : ''}` }
+    ? { text: `Level ${r.depth} cleared! +${r.xp} XP${r.drop ? `, found ${r.drop.name} (${r.drop.value}g)` : ''}${r.choice ? ' — the guardian offers you a reward!' : ''}${r.checkpoint ? ` — checkpoint: level ${r.checkpoint} is saved!` : ''}${r.component ? ` — the guardian dropped ${r.component}!` : ''}` }
     : { err: true, text: `You died on level ${r.depth}. Your XP and items are safe; the level is still waiting for you.` };
   if (path === '/dungeon/reward') return { text: `You take the ${r.name} (worth ${fmt(r.value)}g)` };
   if (path === '/dungeon/sell') return { text: `The dealer pays ${fmt(r.gold)} gold for ${r.count} item${r.count === 1 ? '' : 's'}` };
   if (path === '/temple/buy') return { text: `You bought ${r.item} for ${fmt(r.paid)} gold` };
   if (path === '/inventory/harden') return { text: `Weapon hardened to +${r.hardening} (${fmt(r.cost)}g)` };
   if (path === '/hunt/start') return { text: 'You slip into the night… the hunt has begun.' };
-  if (path === '/hunt/collect') return { text: `Hunt complete: +${r.xp} XP, +${r.gold} gold${r.levelsGained ? ' — LEVEL UP!' : ''}` };
+  if (path === '/hunt/collect') return { text: `Hunt complete: +${r.xp} XP, +${r.gold} gold${r.levelsGained ? ' — LEVEL UP!' : ''}${r.found?.length ? ` — you found ${r.found.join(', ')}!` : ''}` };
   if (path === '/hunt/cancel') return { text: `Hunt abandoned: ${r.portionsCompleted} portion(s) paid out (+${r.xp} XP, +${r.gold} gold)` };
   if (path === '/work/start') return { text: 'You start your shift at the graveyard.' };
   if (path === '/work/collect') return { text: `Shift complete: earned ${r.wages} gold` };
@@ -201,6 +201,15 @@ function bind() {
         localStorage.setItem('mg_dev', f.elements.dev.checked ? '1' : '0');
         if (was !== f.elements.dev.checked) location.reload(); else { toast('Settings applied'); render(); }
       } catch (err) { toast(err.message, true); }
+    };
+  });
+  // shrine routine editor: the rows become ["hunt:6", "work:4"]
+  view.querySelectorAll('form[data-shrine-routine]').forEach((f) => {
+    f.onsubmit = (e) => {
+      e.preventDefault();
+      const steps = [];
+      for (let i = 0; f.elements['kind' + i]; i++) { const kind = f.elements['kind' + i].value, n = Number(f.elements['amount' + i].value); if (kind) steps.push(`${kind}:${n}`); }
+      act('/shrine/routine', { steps }, 'Routine saved');
     };
   });
   // admin player search
@@ -325,6 +334,7 @@ function pageOverview() {
       <p class="gold">${ico('icons/gold', '')}${fmt(me.gold)} gold</p>
       ${isWorking() ? `<p class="bad">${img('ui/working')}Working in the graveyard: <b data-cd="${me.work_until}" data-refresh="1"></b> left</p>` : ''}
       ${isInDungeon() ? `<p class="bad">${ico('nav/dungeon', '🕳 ')}Inside the dungeon · <a href="#/dungeon">go to the dungeon</a></p>` : ''}
+      <p class="muted">🩸 Animal blood ${fmt(me.blood)} / ${me.bloodMax}${me.level >= catalog.shrineLevel ? ` · <a href="#/town/shrine">Shrine: ${esc({ running: 'running', paused: 'paused', starved: 'out of blood', off: 'not started' }[me.shrine] ?? 'not built')}</a>` : ` · the shrine unlocks at level ${catalog.shrineLevel}`}</p>
       ${isHunting() ? `<p class="bad">${img('ui/hunting')}Out hunting: <b data-cd="${me.hunt_until}" data-refresh="1"></b> left · <a href="#/hunt">manage</a></p>` : ''}
     </div>
     <div class="card"><h2>Attributes</h2>
@@ -405,11 +415,11 @@ function pageHunt() {
   return `<div class="card" style="max-width:600px"><h2>Manhunt</h2>${chances}${body}${isHunting() ? '' : huntResultHtml(huntResult)}</div>`;
 }
 
-const CATEGORIES = [['weapon', '⚔ Weapons'], ['armor', '🛡 Armor'], ['ring', '💍 Rings'], ['amulet', '🔮 Amulets'], ['potion', '🧪 Potions']];
+const CATEGORIES = [['weapon', '⚔ Weapons'], ['armor', '🛡 Armor'], ['ring', '💍 Rings'], ['amulet', '🔮 Amulets'], ['potion', '🧪 Potions'], ['component', '🩸 Shrine parts']];
 const catTabs = (base, cur, counts) => `<div class="tabs">${CATEGORIES.map(([k, n]) => `<a href="#/town/${base}/${k}" class="${k === cur ? 'on' : ''}">${img('items/cat_' + k, 'nav-ico')}${n}${counts ? ` <span class="pill">${counts[k] ?? 0}</span>` : ''}</a>`).join('')}</div>`;
 
 async function pageTown(tab = 'store', sub, more) {
-  const tabs = [['store', 'Store'], ['inventory', 'Inventory'], ['temple', 'Blood Temple'], ['sentinels', 'Sentinels'], ['graveyard', 'Graveyard'], ['dealer', 'Relic Dealer']];
+  const tabs = [['store', 'Store'], ['inventory', 'Inventory'], ['temple', 'Blood Temple'], ['sentinels', 'Sentinels'], ['graveyard', 'Graveyard'], ['dealer', 'Relic Dealer'], ['shrine', 'Shrine']];
   const head = `<div class="tabs">${tabs.map(([k, n]) => `<a href="#/town/${k}" class="${k === tab ? 'on' : ''}">${n}</a>`).join('')}</div>`;
   const busy = isBusy();
   if (tab === 'inventory') {
@@ -421,6 +431,7 @@ async function pageTown(tab = 'store', sub, more) {
       return `<tr><td>${img('items/' + i.key, 'item-ico')}${esc(i.name)}${i.hardening ? ` <span class="pill gold">+${i.hardening}</span>` : ''}${i.equipped ? ' <span class="pill good">equipped</span>' : ''}${def.minLevel > me.level ? ` <span class="pill bad">needs Lv ${def.minLevel}</span>` : ''}</td><td>${describe(def, i.hardening)}</td><td class="r">
         ${def.slot === 'potion' ? `<button class="sm" data-do="/inventory/use" data-body='{"inventoryId":${i.id}}' data-ok="Potion used" ${def.potion === 'maxhp' && me.vitality_hp >= catalog.vitalityCap ? 'disabled title="Maximum reached"' : ''}>Use</button>` : ''}
         ${def.slot === 'weapon' ? `<button class="sm sec" data-do="/inventory/harden" data-body='{"inventoryId":${i.id}}' ${i.hardening >= catalog.hardenMax || me.gold < hardCost || busy ? 'disabled' : ''}>${i.hardening >= catalog.hardenMax ? 'Max' : `Harden ${fmt(hardCost)}g`}</button>` : ''}
+        ${def.slot === 'component' ? `<button class="sm" data-do="/shrine/install" data-body='{"inventoryId":${i.id}}' data-ok="Installed in the shrine" ${busy ? 'disabled' : ''}>Install in shrine</button>` : ''}
         <button class="sm sec" data-do="/inventory/sell" data-body='{"inventoryId":${i.id}}' data-confirm="Sell to the shop for ${fmt(Math.floor(def.price / 2))}g?" data-ok="Sold">Shop ${fmt(Math.floor(def.price / 2))}g</button>
         <input id="tp-${i.id}" type="number" min="1" placeholder="price" value="${def.price}" style="width:6rem;padding:.15rem .3rem">
         <button class="sm" data-do="/temple/list" data-body='{"inventoryId":${i.id}}' data-from="#tp-${i.id}:price" data-ok="Listed in the Blood Temple" ${busy ? 'disabled' : ''}>List in Temple</button></td></tr>`;
@@ -485,12 +496,13 @@ async function pageTown(tab = 'store', sub, more) {
       <button data-do="/work/start" data-from="#hours:hours">Start working</button></div>`;
     return `${head}<div class="card"><h2>Graveyard work</h2>${body}</div>`;
   }
+  if (tab === 'shrine') return head + (await shrineHtml());
   const cat = CATEGORIES.some(([k]) => k === sub) ? sub : 'weapon';
-  const counts = Object.fromEntries(CATEGORIES.map(([k]) => [k, catalog.items.filter((i) => i.slot === k).length]));
+  const counts = Object.fromEntries(CATEGORIES.map(([k]) => [k, catalog.items.filter((i) => i.slot === k && !i.noShop).length]));
   const owned = (key) => me.inventory.filter((i) => i.key === key).length;
   // every gear line (Blade, Plate, ...) is listed on its own, tier by tier; items far above your level stay folded away
   const lineOf = (i) => i.key.replace(/_\d+$/, '');
-  const all = catalog.items.filter((i) => i.slot === cat).sort((x, y) => (lineOf(x) === lineOf(y) ? x.minLevel - y.minLevel : catalog.items.findIndex((z) => lineOf(z) === lineOf(x)) - catalog.items.findIndex((z) => lineOf(z) === lineOf(y))) || x.price - y.price);
+  const all = catalog.items.filter((i) => i.slot === cat && !i.noShop).sort((x, y) => (lineOf(x) === lineOf(y) ? x.minLevel - y.minLevel : catalog.items.findIndex((z) => lineOf(z) === lineOf(x)) - catalog.items.findIndex((z) => lineOf(z) === lineOf(y))) || x.price - y.price);
   const shown = more === 'all' ? all : all.filter((i) => i.minLevel <= me.level + 8 || owned(i.key));
   let lastLine = '';
   const rows = shown.map((i) => {
@@ -505,6 +517,43 @@ async function pageTown(tab = 'store', sub, more) {
   const foot = more === 'all' ? `<p><a href="#/town/store/${cat}">Show only items near my level</a></p>` : hidden ? `<p class="muted">${hidden} more item${hidden === 1 ? '' : 's'} for higher levels. <a href="#/town/store/${cat}/all">Show all</a></p>` : '';
   return `${head}<div class="card"><h2>Store</h2>${catTabs('store', cat, counts)}${cat === 'potion' ? vitalityNote() : ''}<table><tr><th>Item</th><th>Effect</th><th class="r">Level</th><th></th></tr>${rows}</table>${foot}</div>`;
 }
+const STEP_LABEL = { hunt: ['Hunt', 'portions of 10 min'], work: ['Graveyard work', 'hours'], dungeon: ['Dungeon run', 'fights'] };
+/** "hunt:6" -> "Hunt 6 × 10 min" */
+const stepName = (t) => { const [k, n] = t.split(':'); return k === 'hunt' ? `Hunt ${n} × ${dur(catalog.huntPortionMs ?? 600000)}` : k === 'work' ? `Work ${n} h` : `Dungeon run (up to ${n} fights)`; };
+async function shrineHtml() {
+  const s = await api('/shrine');
+  const pct = (x) => `${Math.round(x * 1000) / 10}%`;
+  if (!s.unlocked) return `<div class="card"><h2>Shrine</h2><p class="muted">An old shrine stands outside the town. It will answer you from level <b>${s.unlockLevel}</b>.</p>
+    <p class="muted">It hunts and works for you while you are away, fuelled by animal blood that you gather by playing.</p></div>`;
+  const about = `<ul class="muted"><li>Every <b>manual</b> action gathers animal blood on the way (hunting, work, raids, dungeon fights). The shrine can hold <b>${s.tank}</b>.</li>
+      <li>While the shrine runs, it works through your routine and pays <b>${pct(s.efficiency)}</b> of what the same time would pay by hand. An automated hour burns <b>${s.bloodPerHour}</b> blood.</li>
+      <li>The usual daily limits stay (3 hours of hunting a day, one dungeon run a day). With an <b>Idol of the Hunt</b> installed the shrine can also do dungeon runs: all or nothing (a paused run is cancelled).</li>
+      <li><b>No protection while it runs:</b> you can be raided, but a raid takes at most ${Math.round(catalog.shrineRaidLossCap * 100)}% of your gold.</li>
+      <li>Hunting, working, raiding or entering the dungeon by hand <b>pauses</b> the shrine (the step in progress is paid pro rata). Press Start when you are done.</li></ul>`;
+  if (!s.owned) return `<div class="card"><h2>Shrine</h2><p>Build the shrine for <b class="gold">${fmt(s.price)} gold</b>.</p>
+      <p><button data-do="/shrine/buy" data-ok="The shrine is yours" ${me.gold < s.price || isBusy() ? 'disabled' : ''}>Build the shrine</button></p>${about}</div>`;
+  const cur = s.current;
+  const statusPill = { running: '<span class="pill good">running</span>', paused: '<span class="pill gold">paused</span>', starved: '<span class="pill bad">out of blood</span>', off: '<span class="pill">not started</span>' }[s.status];
+  const slotRows = Array.from({ length: s.slots }, (_, i) => { const [k, n] = (s.routine[i] ?? ':').split(':');
+    return `<div class="row" style="margin:.2rem 0"><span class="muted" style="min-width:3rem">Step ${i + 1}</span>
+      <select name="kind${i}"><option value="">— nothing —</option>${Object.entries(STEP_LABEL).filter(([key]) => key !== 'dungeon' || s.dungeonUnlocked).map(([key, [name]]) => `<option value="${key}" ${key === k ? 'selected' : ''}>${name}</option>`).join('')}</select>
+      <input name="amount${i}" type="number" min="1" max="48" value="${n || ''}" style="width:5rem" aria-label="amount"> <span class="muted">portions (hunt) / hours (work)${s.dungeonUnlocked ? ' / fights (dungeon)' : ''}</span></div>`; }).join('');
+  return `<div class="grid"><div class="card"><h2>Shrine ${statusPill}</h2>
+      <label>🩸 Animal blood (about ${s.hoursOfFuel} h of work)</label>${bar('hp', s.blood, s.tank, `${fmt(s.blood)} / ${s.tank}`)}
+      <p class="muted">Efficiency ${pct(s.efficiency)} (best possible ${pct(s.maxEfficiency)}) · ${s.bloodPerHour} blood per automated hour</p>
+      ${cur ? `<p>Now: <b>${esc(stepName(cur.step))}</b> · ends in <b data-cd="${cur.endsAt}" data-refresh="1"></b></p><div class="bar xp" data-progress="${cur.startedAt},${cur.endsAt}"><i></i><span></span></div>` : ''}
+      ${s.status === 'starved' ? '<p class="bad">The shrine ran out of blood. Hunt, work, raid or delve to gather more, then start it again.</p>' : ''}
+      <div class="row" style="margin-top:.6rem">${s.status === 'running'
+        ? '<button class="sec" data-do="/shrine/pause" data-ok="Shrine paused">⏸ Pause</button>'
+        : `<button data-do="/shrine/start" data-ok="The shrine is working" ${isBusy() || !s.routine.length ? 'disabled' : ''}>▶ ${s.status === 'paused' ? 'Resume' : 'Start'}</button>`}</div>
+      ${isBusy() ? '<p class="muted">Finish what you are doing by hand first.</p>' : ''}</div>
+    <form class="card" data-shrine-routine><h2>Routine</h2><p class="muted">The steps repeat in order until the blood runs out. Changing the routine pauses the shrine.</p>${slotRows}<p><button>Save routine</button></p></form></div>
+    <div class="card"><h2>Parts</h2><p class="muted">Every installed tier adds ${Math.round(catalog.shrineEfficiencyPerUpgrade * 1000) / 10}% efficiency (${s.upgrades} of 6 so far). Tier I is sold in the <a href="#/town/store/component">shop</a>; tier II is found while hunting large towns and beating dungeon guardians, or bought from other players in the Blood Temple.</p>
+      <table>${['chalice', 'altar', 'idol'].map((k) => { const t = s.parts[k] ?? 0, name = { chalice: 'Blood Chalice', altar: 'Bone Altar', idol: 'Idol of the Hunt' }[k], what = { chalice: `tank ${s.tank}`, altar: `${s.slots} routine steps`, idol: t >= 2 ? `+${Math.round(catalog.shrineBloodBonus * 100)}% blood` : t === 1 ? 'dungeon automation' : '' }[k];
+        return `<tr><td>${esc(name)}</td><td>${t ? `tier ${t === 1 ? 'I' : 'II'} <span class="muted">(${esc(what)})</span>` : '<span class="muted">not installed</span>'}</td><td class="r">${t ? `<button class="sm sec" data-do="/shrine/remove" data-body='${esc(JSON.stringify({ kind: k }))}' ${isBusy() ? 'disabled' : ''}>Remove</button>` : ''}</td></tr>`; }).join('')}</table>
+      ${s.bag.length ? `<h3>In your bag</h3><table>${s.bag.map((b) => { const def = catalog.items.find((x) => x.key === b.key); return `<tr><td>${esc(def.name)}</td><td class="muted">${esc(describe(def))}</td><td class="r"><button class="sm" data-do="/shrine/install" data-body='${esc(JSON.stringify({ inventoryId: b.id }))}' ${isBusy() ? 'disabled' : ''}>Install</button></td></tr>`; }).join('')}</table>` : '<p class="muted">No parts in your bag.</p>'}</div>
+    <div class="card"><h3>How it works</h3>${about}</div>`;
+}
 /** Vitality Potions add permanent max HP, capped in total (see CFG.vitalityCap). */
 function vitalityNote() {
   const used = me.vitality_hp, cap = catalog.vitalityCap;
@@ -517,6 +566,7 @@ function describe(i, hardening = 0) {
   if (i.key === 'amulet_perfection') parts.push('hunts never fail');
   if (i.potion) parts.push({ heal: 'full heal', maxhp: `+${catalog.vitalityGain} max HP (max +${catalog.vitalityCap} in total)`, stat: '+10% stats 1h' }[i.potion]);
   if (i.key === 'amulet_healing') parts.push('healing');
+  if (i.component) { const { kind, tier } = i.component; parts.push({ chalice: `+${catalog.shrineTankPerTier * tier} blood tank`, altar: `+${catalog.shrineSlotsPerTier * tier} routine step${tier > 1 ? 's' : ''}`, idol: tier === 1 ? 'unlocks dungeon automation' : `+${Math.round(catalog.shrineBloodBonus * 100)}% blood gathered` }[kind], `+${Math.round(catalog.shrineEfficiencyPerUpgrade * 1000) / 10}% shrine efficiency`); }
   return parts.join(', ') || '—';
 }
 
@@ -1028,6 +1078,7 @@ function renderDev() {
   el.dataset.built = '1';
   el.innerHTML = `<details><summary>🛠 Test tools</summary>
     <div class="row"><input id="dg" type="number" placeholder="gold" value="1000"><button class="sm" data-dev="grant" data-f="dg:gold">+gold</button></div>
+    <div class="row"><button class="sm" data-dev="blood">Fill blood tank</button></div>
     <div class="row"><input id="dl" type="number" placeholder="level" value="20"><button class="sm" data-dev="level" data-f="dl:level">Set level</button></div>
     <div class="row"><button class="sm" data-dev="heal">Full heal</button><button class="sm" data-dev="bots" data-f="dn:count">+bots</button><input id="dn" type="number" value="10"></div>
     <div class="row"><button class="sm" data-dev="arena-fill">Fill my arena event</button><button class="sm" data-dev="market">Seed market</button></div>

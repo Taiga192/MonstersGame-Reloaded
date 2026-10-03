@@ -6,6 +6,7 @@ import { accomplishmentStatus, activateSet, getSets, saveSet } from '../game/acc
 import * as arena from '../game/arena.ts';
 import * as clan from '../game/clan.ts';
 import * as dungeon from '../game/dungeon.ts';
+import * as shrine from '../game/shrine.ts';
 import * as eco from '../game/economy.ts';
 import * as forum from '../game/forum.ts';
 import { battleStats, effectiveBonus, equipmentLoadout, isBusy, isHunting, isWorking, loadPlayer, ownedItems, type Player, isInDungeon } from '../game/player.ts';
@@ -51,6 +52,8 @@ export function runSession(ctx: Ctx, bot: BotRow): SessionResult {
   let p = loadPlayer(db, id, now);
   if (p.hunt_started && !isHunting(p, now)) { const r = attempt(() => eco.collectHunt(db, id, now, rng)); if (r) note(`hunt +${r.xp}xp +${r.gold}g`); }
   if (p.work_started && !isWorking(p, now)) { const r = attempt(() => eco.collectWork(db, id, now)); if (r) note(`work +${r.wages}g`); }
+  shrine.settle(db, id, now, rng); // what the shrine did while the bot was away
+  shrine.pause(db, id, now, rng);  // now the bot plays by hand
   p = loadPlayer(db, id, now);
   if (isInDungeon(p, now)) { // a run in progress: one fight whenever the wait between fights is over; nothing else is possible while inside
     const next = dungeonContinue(ctx, id, note);
@@ -71,9 +74,10 @@ export function runSession(ctx: Ctx, bot: BotRow): SessionResult {
   raid(ctx, id, persona, note);
   p = loadPlayer(db, id, now);
   const goAway = sessionsLeft <= 0 || (isNight(now, bot.tz) && rng() < 0.7);
-  let started = false;
+  let started = false, shrineAwayFor = 0;
   if (!isBusy(p, now)) {
-    if (goAway) started = longActivity(ctx, p, persona, isNight(now, bot.tz), note);
+    if (goAway && shrineAway(ctx, id, persona, note)) { shrineAwayFor = randInt(rng, 240, 600); started = true; }
+    else if (goAway) started = longActivity(ctx, p, persona, isNight(now, bot.tz), note);
     else if (persona.hunt > 0.5 && huntLeft(p, now) >= 30 * MIN && rng() < persona.hunt * 0.45) started = ok(() => eco.startHunt(db, id, randInt(rng, 2, 4), now)) && (note('short hunt'), true);
   }
   if (goAway) sessionsLeft = randInt(rng, persona.sessions[0], persona.sessions[1]);
@@ -81,10 +85,43 @@ export function runSession(ctx: Ctx, bot: BotRow): SessionResult {
   // 4) schedule the next session
   p = loadPlayer(db, id, now);
   let nextAt: number;
-  if (isBusy(p, now)) nextAt = Math.max(p.hunt_until ?? 0, p.work_until ?? 0) + randInt(rng, 1, 8) * MIN;
+  if (shrineAwayFor) nextAt = now + shrineAwayFor * MIN * persona.tempo; // the shrine works, the bot is away
+  else if (isBusy(p, now)) nextAt = Math.max(p.hunt_until ?? 0, p.work_until ?? 0) + randInt(rng, 1, 8) * MIN;
   else if (goAway && !started) nextAt = now + (isNight(now, bot.tz) ? randInt(rng, 300, 540) : randInt(rng, 60, 240)) * MIN * persona.tempo; // logged out: sleeping at night, otherwise a few hours
   else nextAt = now + randInt(rng, 16, 40) * MIN * persona.tempo;
   return { nextAt, sessionsLeft, actions };
+}
+
+// ---------------------------------------------------------------- shrine
+/** Buy the shrine once it is unlocked and affordable (with a cushion), buy and install the cheap tier I parts when there is spare gold, and give it a routine. */
+function shrineSetup(ctx: Ctx, p: Player, persona: Persona, note: (a: string) => void) {
+  const { db, now, rng } = ctx;
+  if (persona.shrine <= 0 || p.level < CFG.shrineLevel) return;
+  if (!db.prepare('SELECT 1 FROM shrine WHERE player_id = ?').get(p.id)) {
+    if (p.gold < CFG.shrinePrice * 1.3 || rng() > persona.shrine * 0.6 || !ok(() => shrine.buyShrine(db, p.id, now))) return;
+    note('bought the shrine');
+    p = loadPlayer(db, p.id, now);
+  }
+  // parts: the idol first (it unlocks the dungeon), then chalice and altar; tier II parts that were found are installed as they come
+  const have = shrine.shrineState(db, p.id, now).parts;
+  for (const kind of ['idol', 'chalice', 'altar'] as const) {
+    const inBag = ownedItems(db, p.id).filter((o) => o.def.component?.kind === kind).sort((a, b) => b.def.component!.tier - a.def.component!.tier)[0];
+    if (!inBag && !have[kind] && loadPlayer(db, p.id, now).gold >= ITEM_BY_KEY.get(`shrine_${kind}_1`)!.price * 3 && rng() < persona.shrine) ok(() => eco.buyItem(db, p.id, `shrine_${kind}_1`, now));
+  }
+  for (const o of ownedItems(db, p.id).filter((x) => x.def.component).sort((a, b) => b.def.component!.tier - a.def.component!.tier)) if (ok(() => shrine.installPart(db, p.id, o.id, now, rng))) note(`installed ${o.def.name}`);
+  const st = shrine.shrineState(db, p.id, now);
+  const want = (persona.key === 'casual' || persona.key === 'worker') ? ['hunt:6', 'work:6'] : ['hunt:6', 'work:4'];
+  if (st.dungeonUnlocked) want.splice(1, 0, 'dungeon:30'); // a dungeon run in the middle
+  const routine = want.slice(0, st.slots);
+  if (st.routine.join() !== routine.join() && st.status !== 'running') ok(() => shrine.setRoutine(db, p.id, routine, now, rng));
+}
+/** Going away: let the shrine work instead of a manual long activity (when it is owned, set up and has blood). */
+function shrineAway(ctx: Ctx, id: number, persona: Persona, note: (a: string) => void): boolean {
+  const { db, now, rng } = ctx;
+  if (persona.shrine <= 0 || rng() > persona.shrine) return false;
+  if (!ok(() => shrine.start(db, id, now, rng))) return false;
+  note('shrine started');
+  return true;
 }
 
 // ---------------------------------------------------------------- maintenance
@@ -100,6 +137,7 @@ function maintain(ctx: Ctx, id: number, persona: Persona, note: (a: string) => v
   }
   if (rng() < persona.trade) { marketBuy(ctx, loadPlayer(db, id, now), persona, note); p = loadPlayer(db, id, now); } // player offers are cheaper than the shop
   spend(ctx, p, persona, note);
+  shrineSetup(ctx, loadPlayer(db, id, now), persona, note);
   if (rng() < persona.trade) marketSell(ctx, id, persona, note);
   tuneAccomplishments(ctx, id, note);
   p = loadPlayer(db, id, now);
@@ -108,6 +146,8 @@ function maintain(ctx: Ctx, id: number, persona: Persona, note: (a: string) => v
   }
 }
 
+/** potions are consumed and shrine parts are installed, neither is gear that is worn or sold as surplus */
+const NOT_GEAR = new Set<string>(['potion', 'component']);
 const catKey = (d: ItemDef) => (d.slot === 'ring' ? `ring:${d.ringKind}` : `${d.slot}:${MAIN_STATS.find((s) => d.bonus[s]) ?? d.key}`);
 const itemValue = (d: ItemDef, persona: Persona, hardening = 0) =>
   Object.values(effectiveBonus(d, hardening)).reduce((a, b) => a + (b ?? 0), 0) + (d.goldBonus ?? 0) * persona.goldRing + (d.huntBonus && d.huntBonus < 1000 ? d.huntBonus * persona.huntRing : 0);
@@ -115,11 +155,11 @@ const itemValue = (d: ItemDef, persona: Persona, hardening = 0) =>
 /** Value of the best usable item we own in each gear category (hardening included). */
 function bestValues(db: DB, p: Player, persona: Persona) {
   const best = new Map<string, number>();
-  for (const o of ownedItems(db, p.id)) if (o.def.minLevel <= p.level && o.def.slot !== 'potion') best.set(catKey(o.def), Math.max(best.get(catKey(o.def)) ?? 0, itemValue(o.def, persona, o.hardening)));
+  for (const o of ownedItems(db, p.id)) if (o.def.minLevel <= p.level && !NOT_GEAR.has(o.def.slot)) best.set(catKey(o.def), Math.max(best.get(catKey(o.def)) ?? 0, itemValue(o.def, persona, o.hardening)));
   return best;
 }
 /** Would this persona ever want this item? (amulets are only worth it for perfection-seeking hunters) */
-const wanted = (def: ItemDef, persona: Persona) => def.slot !== 'potion' && (def.slot !== 'amulet' || amuletWanted(def, persona));
+const wanted = (def: ItemDef, persona: Persona) => !NOT_GEAR.has(def.slot) && (def.slot !== 'amulet' || amuletWanted(def, persona));
 /** amulet of mights (stat amulets) are for everybody; the Amulet of Perfection only pays off for dedicated hunters; the healing amulet has no effect worth buying */
 function amuletWanted(def: ItemDef, persona: Persona) { return def.key === 'amulet_perfection' ? persona.hunt >= 0.8 : Object.keys(def.bonus).length > 0; }
 /** What it would cost to get this item from the shop plus paying for its hardening levels: the ceiling for any fair market price. */
@@ -136,7 +176,7 @@ function spend(ctx: Ctx, p0: Player, persona: Persona, note: (a: string) => void
   const best = bestValues(db, p, persona);
   const cands: { def: ItemDef; gain: number }[] = [];
   for (const def of ITEMS) {
-    if (def.slot === 'potion' || (def.slot === 'amulet' && !amuletWanted(def, persona)) || def.minLevel > p.level) continue;
+    if (NOT_GEAR.has(def.slot) || (def.slot === 'amulet' && !amuletWanted(def, persona)) || def.minLevel > p.level) continue;
     const gain = itemValue(def, persona) - (best.get(catKey(def)) ?? 0);
     if (gain > 0) cands.push({ def, gain });
   }
@@ -382,7 +422,7 @@ function marketSell(ctx: Ctx, id: number, persona: Persona, note: (a: string) =>
   const { db, now, rng } = ctx;
   const p = loadPlayer(db, id, now);
   const wearing = new Set(equipmentLoadout(db, p).equipped);
-  const surplus = ownedItems(db, id).filter((o) => o.def.slot !== 'potion' && !wearing.has(o.id) && !(o.def.minLevel > p.level && rng() < 0.7));
+  const surplus = ownedItems(db, id).filter((o) => !NOT_GEAR.has(o.def.slot) && !wearing.has(o.id) && !(o.def.minLevel > p.level && rng() < 0.7));
   let open = (db.prepare("SELECT COUNT(*) n FROM temple_listings WHERE seller_id = ? AND status = 'open'").get(id) as { n: number }).n;
 
   // reprice: a listing nobody bought for 36 h is withdrawn and offered again 15 % cheaper; one that is already at the floor

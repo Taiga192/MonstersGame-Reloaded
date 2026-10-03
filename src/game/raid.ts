@@ -6,6 +6,7 @@ import { accomplishmentBonus } from './accomplishments.ts';
 import { resumeIfCeasefire, warBetween } from './clan.ts';
 import { bump } from './counters.ts';
 import { simulate } from './combat.ts';
+import { gatherBlood, isAutomated } from './blood.ts';
 import { assertFree, awardXp, isBusy, battleStats, equipmentLoadout, hideoutTotal, loadPlayer, setHp, type Player } from './player.ts';
 
 
@@ -95,7 +96,9 @@ export function fight(db: DB, a: Player, d: Player, now: number, rng: Rng): Raid
 
   let gold = 0;
   if (attackerWon) {
-    gold = Math.floor(d.gold * randRange(rng, CFG.stealMin, CFG.stealMax) * (1 + equipmentLoadout(db, a).goldBonus + accomplishmentBonus(db, a.id).raidGold));
+    let share = randRange(rng, CFG.stealMin, CFG.stealMax);
+    if (isAutomated(db, d.id)) share = Math.min(share, CFG.shrineRaidLossCap); // no protection while the shrine runs, but a reasonable limit
+    gold = Math.floor(d.gold * share * (1 + equipmentLoadout(db, a).goldBonus + accomplishmentBonus(db, a.id).raidGold));
     gold = Math.min(gold, d.gold);
     db.prepare('UPDATE players SET gold = gold - ? WHERE id = ?').run(gold, d.id);
     db.prepare('UPDATE players SET gold = gold + ? WHERE id = ?').run(gold, a.id);
@@ -117,6 +120,7 @@ export function fight(db: DB, a: Player, d: Player, now: number, rng: Rng): Raid
   else { bump(db, d.id, 'defenses_won'); if (war) bump(db, d.id, 'war_wins'); }
   awardXp(db, a.id, xpA, now);
   awardXp(db, d.id, xpD, now);
+  gatherBlood(db, a.id, 'raid');
 
   return { battleId, winner: winner.name, rounds: res.rounds, gold, xpAttacker: xpA, xpDefender: xpD, warId: war?.id ?? null, attackerHp: res.hpA, defenderHp: res.hpB };
 }

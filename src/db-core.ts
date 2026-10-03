@@ -150,6 +150,12 @@ CREATE TABLE IF NOT EXISTS forum_threads (
 CREATE TABLE IF NOT EXISTS forum_posts (id INTEGER PRIMARY KEY, thread_id INTEGER NOT NULL, author_id INTEGER NOT NULL, body TEXT NOT NULL, created_at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS forum_posts_thread ON forum_posts(thread_id, id);
 
+-- the shrine: automation of hunting and work (one row per player who bought it); animal blood is stored on the player
+CREATE TABLE IF NOT EXISTS shrine (
+  player_id INTEGER PRIMARY KEY REFERENCES players(id), level INTEGER NOT NULL DEFAULT 1, status TEXT NOT NULL DEFAULT 'off', -- off | running | paused | starved
+  routine TEXT NOT NULL DEFAULT '[]', step INTEGER NOT NULL DEFAULT 0, step_at INTEGER NOT NULL DEFAULT 0, bought_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS shrine_components (player_id INTEGER NOT NULL REFERENCES players(id), kind TEXT NOT NULL, tier INTEGER NOT NULL, PRIMARY KEY (player_id, kind));
 -- admin page: tuned numbers (only the ones that differ from config.ts), world facts, and an audit trail of what admins did
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -201,6 +207,7 @@ function migrate(db: DB) {
   add('clans', 'is_open', 'INTEGER NOT NULL DEFAULT 1');
   add('players', 'is_bot', 'INTEGER NOT NULL DEFAULT 0');
   add('dungeon', 'ready_at', 'INTEGER NOT NULL DEFAULT 0'); add('dungeon', 'checkpoint', 'INTEGER NOT NULL DEFAULT 1');
+  add('players', 'blood', 'REAL NOT NULL DEFAULT 0');
   add('players', 'is_admin', 'INTEGER NOT NULL DEFAULT 0'); // multiplayer: set by hand (scripts/admin.ts); single player: everyone is admin anyway
   db.exec('DELETE FROM sessions WHERE length(token) != 64'); // sessions used to store the token itself (48 hex); now only its SHA-256 (64 hex)
 }

@@ -281,7 +281,7 @@ test('UI: gear is split into categories in store and inventory, with an equipped
       const n = names();
       assert.ok(n.length > 0 && n.every((x) => yes.test(x)) && !n.some((x) => no.test(x)), `${cat}: ${n.join(' | ')}`);
     }
-    assert.equal(doc.querySelectorAll('#view .card .tabs a').length, 5, 'five category tabs');
+    assert.equal(doc.querySelectorAll('#view .card .tabs a').length, 6, 'six category tabs (the last one: shrine parts)');
 
     await go('#/town/store/ring', 'Stat Ring 1');
     click('#view button[data-do="/store/buy"]');
@@ -639,6 +639,53 @@ test('UI: the hunt page says hunters are safe, and vitality potions show the +15
     click('#view button', 'Use');
     await until(() => doc.querySelector('#toast')!.textContent!.includes('Potion used'), 'used');
     await until(() => /Gained so far:\s*10 \/ 150/.test(view().textContent!), 'progress 10 / 150');
+    assert.deepEqual(errors, []);
+  } finally { close(); }
+});
+
+test('UI: the shrine — locked below level 10, build it, set a routine, start, pause', async () => {
+  const { w, doc, until, view, go, click, errors, close } = await boot();
+  try {
+    await until(() => !!doc.querySelector('#reg'), 'login page'); await new Promise((r) => setTimeout(r, 50)); // the page attaches its form handlers a tick after rendering
+    (doc.querySelector('#reg [name=name]') as HTMLInputElement).value = 'Priest';
+    (doc.querySelector('#reg [name=password]') as HTMLInputElement).value = 'secret12';
+    doc.querySelector('#reg')!.dispatchEvent(new w.Event('submit', { cancelable: true }));
+    await until(() => view().textContent!.includes('Attributes'), 'overview');
+    assert.match(view().textContent!, /the shrine unlocks at level 10/);
+    await go('#/town/shrine', 'answer you from level');
+    assert.match(view().textContent!, /from level 10/);
+    assert.ok(!doc.querySelector('[data-do="/shrine/buy"]'), 'nothing to buy yet');
+
+    const dev = async (sel: string) => { (doc.querySelector(sel) as HTMLElement).click(); await new Promise((r) => setTimeout(r, 250)); };
+    (doc.querySelector('#dl') as HTMLInputElement).value = '12'; await dev('[data-dev=level]');
+    (doc.querySelector('#dg') as HTMLInputElement).value = '5000'; await dev('[data-dev=grant]');
+    await dev('[data-dev=blood]');
+    await go('#/town/shrine', 'Build the shrine');
+    click('#view button', 'Build the shrine');
+    await until(() => view().textContent!.includes('Routine'), 'shrine built');
+    assert.match(view().textContent!, /not started/);
+    assert.ok((doc.querySelector('[data-do="/shrine/start"]') as HTMLButtonElement).disabled, 'no routine yet');
+
+    // routine: hunt 6, work 4
+    const f = doc.querySelector('#view form[data-shrine-routine]') as HTMLFormElement;
+    (f.elements.namedItem('kind0') as HTMLSelectElement).value = 'hunt'; (f.elements.namedItem('amount0') as HTMLInputElement).value = '6';
+    (f.elements.namedItem('kind1') as HTMLSelectElement).value = 'work'; (f.elements.namedItem('amount1') as HTMLInputElement).value = '4';
+    f.dispatchEvent(new w.Event('submit', { cancelable: true }));
+    await until(() => doc.querySelector('#toast')!.textContent!.includes('Routine saved'), 'routine saved');
+    await new Promise((r) => setTimeout(r, 200));
+    await go('#/town/shrine', 'Routine');
+    assert.equal((doc.querySelector('#view select[name=kind0]') as HTMLSelectElement).value, 'hunt');
+    click('#view button', 'Start');
+    await until(() => view().textContent!.includes('Now: Hunt 6'), 'running');
+    assert.ok(doc.querySelector('#view [data-progress]'), 'progress bar of the step');
+    assert.match(view().textContent!, /Pause/);
+    // the overview shows it too
+    await go('#/overview', 'Attributes');
+    assert.match(view().textContent!, /Shrine: running/);
+    await go('#/town/shrine', 'Routine');
+    click('#view button', 'Pause');
+    await until(() => [...doc.querySelectorAll('#view button')].some((b) => /Resume/.test(b.textContent!)), 'paused: a Resume button appears');
+    assert.match(view().textContent!, /paused/);
     assert.deepEqual(errors, []);
   } finally { close(); }
 });

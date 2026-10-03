@@ -5,6 +5,8 @@ import { assert } from '../errors.ts';
 import { randRange, type Rng } from '../rng.ts';
 import { damage, hitChance } from './combat.ts';
 import { bump } from './counters.ts';
+import { gatherBlood } from './blood.ts';
+import { maybeFindComponent } from './components.ts';
 import { assertFree, awardXp, battleStats, isInDungeon, loadPlayer, type Stats } from './player.ts';
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -138,7 +140,7 @@ export function leaveDungeon(db: DB, id: number, now: number) {
 
 export interface DungeonFightResult {
   won: boolean; died: boolean; depth: number; monster: { name: string; guardian: boolean }; hpLeft: number; hpLost: number; rounds: number; log: FightLog[];
-  xp: number; levelsGained: number; drop: { name: string; value: number } | null; choice: RewardOption[] | null; nextDepth: number; cooldownUntil: number | null;
+  xp: number; levelsGained: number; drop: { name: string; value: number } | null; /** a shrine part found with the guardian */ component?: string | null; choice: RewardOption[] | null; nextDepth: number; cooldownUntil: number | null;
   /** when the next fight is allowed (null after dying) */ readyAt: number | null;
   /** a new checkpoint was reached with this victory */ checkpoint: number | null;
 }
@@ -151,6 +153,7 @@ export function fight(db: DB, id: number, now: number, rng: Rng): DungeonFightRe
   assert(now >= r.ready_at, 'fight_cooldown', `The next monster is not here yet: ${Math.ceil((r.ready_at - now) / 1000)} s`);
   const p = loadPlayer(db, id, now);
   const mon = monsterAt(r.depth);
+  gatherBlood(db, id, 'dungeon');
   const res = fightMonster(battleStats(db, p, { ancestral: p.level >= CFG.ancestralMinLevel }), r.hp, r.max_hp, mon, rng);
   const base = { depth: r.depth, monster: { name: mon.name, guardian: mon.guardian }, rounds: res.rounds, log: res.log, hpLost: r.hp - res.hpLeft };
 
@@ -171,6 +174,7 @@ export function fight(db: DB, id: number, now: number, rng: Rng): DungeonFightRe
     addLoot(db, id, drop.name, drop.value, r.depth, false, now);
   }
   let choice: RewardOption[] | null = null;
+  const part = mon.guardian ? maybeFindComponent(db, id, CFG.componentDropGuardian, now, rng) : null;
   if (mon.guardian) { // guardians offer a choice of high value items
     const names = [...relicRow(r.depth)]; const opts: RewardOption[] = [];
     for (let i = 0; i < CFG.dungeonRewardOptions && names.length; i++) {
@@ -188,8 +192,59 @@ export function fight(db: DB, id: number, now: number, rng: Rng): DungeonFightRe
   ).run(depth, now, res.hpLeft, now, xpGained, depth - 1, choice ? JSON.stringify(choice) : null, readyAt, newCheckpoint ?? r.checkpoint, id);
   db.prepare('UPDATE players SET dungeon_until = ? WHERE id = ?').run(now + CFG.dungeonIdleLimit, id); // activity keeps the run alive
   bump(db, id, 'dungeon_levels');
-  return { ...base, won: true, died: false, hpLeft: res.hpLeft, xp: xpGained, levelsGained: lv.levelsGained, drop, choice, nextDepth: depth, cooldownUntil: null, readyAt, checkpoint: newCheckpoint };
+  return { ...base, won: true, died: false, hpLeft: res.hpLeft, xp: xpGained, levelsGained: lv.levelsGained, drop, choice, nextDepth: depth, cooldownUntil: null, readyAt, checkpoint: newCheckpoint, component: part?.name ?? null };
 }
+
+export interface AutoDelve { ran: boolean; cleared: number; died: boolean; xp: number; checkpoint: number | null }
+
+/**
+ * An automated run for the shrine (shrine.ts): up to `fights` fights back to back, one per wait between fights, at `share` of the
+ * normal XP and loot value. Same monsters, same dungeon HP (full at the start, never regenerating), same checkpoints and the same
+ * once-a-day cooldown as a run by hand. Guardian rewards are taken automatically (the most valuable one). Nothing happens when
+ * the character is inside by hand or the cooldown has not run out at `startAt`.
+ */
+export function delveAuto(db: DB, id: number, startAt: number, fights: number, share: number, now: number, rng: Rng): AutoDelve {
+  const none: AutoDelve = { ran: false, cleared: 0, died: false, xp: 0, checkpoint: null };
+  const r = load(db, id, now);
+  if (r.active || startAt < r.cooldown_until) return none;
+  if (r.pending) { const best = (JSON.parse(r.pending) as RewardOption[]).sort((a, b) => b.value - a.value)[0]; addLoot(db, id, best.name, best.value, r.depth - 1, true, now); }
+  const p = loadPlayer(db, id, now);
+  const stats = battleStats(db, p, { ancestral: p.level >= CFG.ancestralMinLevel });
+  let depth = r.depth, hp = p.max_hp, cleared = 0, died = false, xpTotal = 0, checkpoint = r.checkpoint;
+  const every = Math.max(1, CFG.dungeonCheckpoint);
+  for (let i = 0; i < fights; i++) {
+    const mon = monsterAt(depth);
+    const res = fightMonster(stats, hp, p.max_hp, mon, rng);
+    if (!res.won) { died = true; break; }
+    hp = res.hpLeft;
+    xpTotal += awardXp(db, id, Math.max(1, Math.round(mon.xp * share)), now).xpGained;
+    if (rng() < CFG.dungeonDropChance) {
+      const row = lootRow(depth);
+      addLoot(db, id, row[Math.floor(rng() * row.length)], Math.max(1, Math.round(CFG.dungeonLootValue(depth) * randRange(rng, 0.8, 1.2) * share)), depth, false, now);
+    }
+    if (mon.guardian) {
+      const names = [...relicRow(depth)]; let best: RewardOption | null = null;
+      for (let k = 0; k < CFG.dungeonRewardOptions && names.length; k++) {
+        const [lo, hi] = CFG.dungeonRelicMultiplier;
+        const o = { name: names.splice(Math.floor(rng() * names.length), 1)[0], value: Math.round(CFG.dungeonLootValue(depth) * randRange(rng, lo, hi) * share) };
+        if (!best || o.value > best.value) best = o;
+      }
+      if (best) addLoot(db, id, best.name, best.value, depth, true, now);
+      maybeFindComponent(db, id, CFG.componentDropGuardian, now, rng);
+    }
+    depth++; cleared++;
+    if (Math.floor(depth / every) * every >= every) checkpoint = Math.max(checkpoint, Math.floor(depth / every) * every);
+  }
+  const wait = Math.max(CFG.dungeonFightCooldown, MIN_FIGHT_MS), endAt = startAt + (cleared + (died ? 1 : 0)) * wait;
+  db.prepare(
+    `UPDATE dungeon SET depth = ?, reached_at = ?, hp = 0, last_at = ?, kills = kills + ?, deaths = deaths + ?, runs = runs + 1, xp_week = xp_week + ?,
+       best_ever = MAX(best_ever, ?), checkpoint = ?, cooldown_until = ?, active = 0, pending = NULL, ready_at = 0 WHERE player_id = ?`,
+  ).run(depth, endAt, endAt, cleared, died ? 1 : 0, xpTotal, depth - 1, checkpoint, endAt + CFG.dungeonCooldown, id);
+  bump(db, id, 'dungeon_levels', cleared);
+  return { ran: true, cleared, died, xp: xpTotal, checkpoint: checkpoint > r.checkpoint ? checkpoint : null };
+}
+/** The shortest time one automated fight takes (also when the wait between fights is switched off). */
+export const MIN_FIGHT_MS = 60_000;
 
 /** Pick one of the guardian's rewards (allowed inside or outside the dungeon; the rest are gone). */
 export function chooseReward(db: DB, id: number, index: number, now: number) {

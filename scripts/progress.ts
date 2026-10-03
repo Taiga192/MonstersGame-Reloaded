@@ -4,9 +4,12 @@ import { openDb } from '../src/db.ts';
 import { ensureBots, fastForward } from '../src/bots/runner.ts';
 import { seeded } from '../src/rng.ts';
 import { CFG } from '../src/config.ts';
+import { PERSONAS } from '../src/bots/personas.ts';
 
 // SIM_SET="dungeonCheckpoint=100000,rateXp=2" tries a setting without touching config.ts (values in the config's own unit, e.g. milliseconds)
 for (const kv of (process.env.SIM_SET ?? '').split(',').filter(Boolean)) { const [k, v] = kv.split('='); (CFG as Record<string, unknown>)[k] = Number(v); }
+// SIM_TEMPO=6: everybody plays six times less often (a low-time population: log in a few times a day instead of all day)
+if (Number(process.env.SIM_TEMPO) > 0) for (const p of Object.values(PERSONAS)) p.tempo *= Number(process.env.SIM_TEMPO);
 const [days, bots, seed, every] = [Number(process.argv[2] ?? 60), Number(process.argv[3] ?? 100), Number(process.argv[4] ?? 1), Number(process.argv[5] ?? 5)];
 const db = openDb(process.env.SIM_DB || ':memory:'), rng = seeded(seed), end = Date.UTC(2027, 0, 15, 12);
 ensureBots(db, bots, end, rng);

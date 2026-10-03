@@ -5,6 +5,8 @@ import { randInt, type Rng } from '../rng.ts';
 import { accomplishmentBonus } from './accomplishments.ts';
 import { simulate } from './combat.ts';
 import { bump } from './counters.ts';
+import { gatherBlood } from './blood.ts';
+import { maybeFindComponent } from './components.ts';
 import { assertFree, awardXp, battleStats, equipmentLoadout, isHunting, vitalityRoom, isWorking, loadPlayer, ownedItems, setHp, type Player } from './player.ts';
 
 const DAY = 24 * HOUR;
@@ -24,6 +26,7 @@ export function trainStat(db: DB, id: number, stat: Stat, now: number) {
 export function buyItem(db: DB, id: number, key: string, now: number) {
   const item = ITEM_BY_KEY.get(key);
   assert(item, 'bad_item', 'Unknown item', 404);
+  assert(!item.noShop, 'not_for_sale', 'The shop does not sell this: you can only find it or buy it from another player');
   const p = loadPlayer(db, id, now);
   assertFree(p, now);
   assert(p.level >= item.minLevel, 'level_too_low', `Requires level ${item.minLevel}`);
@@ -148,11 +151,12 @@ export function startHunt(db: DB, id: number, portions: number, now: number) {
 
 export interface HuntEvent { place: string; xp: number; gold: number; failed: boolean }
 
-function resolveHunt(db: DB, p: Player, portions: number, rng: Rng) {
+export function resolveHunt(db: DB, p: Player, portions: number, rng: Rng, now: number) {
   const lo = equipmentLoadout(db, p);
   const rewardMult = 1 + lo.huntBonus / 100 + accomplishmentBonus(db, p.id).huntReward; // hunt rings + accomplishments
   const events: HuntEvent[] = [];
   let xp = 0, gold = 0, largeTowns = 0;
+  const found: string[] = []; // shrine parts found in large towns
   for (let i = 0; i < portions; i++) {
     if (!lo.perfection && rng() < CFG.huntFailChance(p.dex)) { events.push({ place: 'nothing', xp: 0, gold: 0, failed: true }); continue; }
     let roll = rng();
@@ -161,18 +165,19 @@ function resolveHunt(db: DB, p: Player, portions: number, rng: Rng) {
     const g = Math.round(randInt(rng, CFG.huntVillage.gold[0], CFG.huntVillage.gold[1]) * mult * CFG.huntGoldLevelScale(p.level) * CFG.rateGold);
     const x = Math.round(CFG.huntVillage.xp * mult);
     events.push({ place: place.key, xp: x, gold: g, failed: false });
-    if (place.key === 'large_town') largeTowns++;
+    if (place.key === 'large_town') { largeTowns++; const part = maybeFindComponent(db, p.id, CFG.componentDropLargeTown, now, rng); if (part) found.push(part.name); }
     xp += x; gold += g;
   }
   bump(db, p.id, 'hunt_portions', events.filter((e) => !e.failed).length);
   bump(db, p.id, 'large_towns', largeTowns);
-  return { events, xp, gold };
+  return { events, xp, gold, found };
 }
 
 function finishHunt(db: DB, id: number, p: Player, portions: number, now: number, rng: Rng) {
-  const r = resolveHunt(db, p, portions, rng);
+  const r = resolveHunt(db, p, portions, rng, now);
   db.prepare('UPDATE players SET gold = gold + ?, hunt_started = NULL, hunt_until = NULL, hunt_portions = NULL WHERE id = ?').run(r.gold, id);
   const lv = awardXp(db, id, r.xp, now);
+  gatherBlood(db, id, 'hunt', portions); // animals on the way
   return { ...r, xp: lv.xpGained, levelsGained: lv.levelsGained };
 }
 
@@ -219,6 +224,9 @@ export function startWork(db: DB, id: number, hours: number, now: number) {
   db.prepare('UPDATE players SET work_started = ?, work_until = ?, work_hours = ? WHERE id = ?').run(now, now + hours * HOUR, hours, id);
 }
 
+/** What `hours` of graveyard work pay a character (hours may be fractional: a shift cut short). */
+export const wagesFor = (db: DB, p: Player, hours: number, share = 1) => Math.floor(hours * CFG.workWagePerHour(p.level) * (1 + accomplishmentBonus(db, p.id).workWage) * share);
+
 const clearWork = (db: DB, id: number, wages: number) =>
   db.prepare('UPDATE players SET gold = gold + ?, work_started = NULL, work_until = NULL, work_hours = NULL WHERE id = ?').run(wages, id);
 
@@ -229,6 +237,7 @@ export function collectWork(db: DB, id: number, now: number) {
   const wages = Math.floor(p.work_hours! * CFG.workWagePerHour(p.level) * (1 + accomplishmentBonus(db, id).workWage));
   bump(db, id, 'work_hours', p.work_hours!); bump(db, id, 'work_gold', wages);
   clearWork(db, id, wages);
+  gatherBlood(db, id, 'work', p.work_hours!);
   return { wages, cancelled: false };
 }
 
@@ -240,6 +249,7 @@ export function cancelWork(db: DB, id: number, now: number) {
   const wages = Math.floor((Math.floor(worked / MIN) / 60) * CFG.workWagePerHour(p.level) * (1 + accomplishmentBonus(db, id).workWage));
   bump(db, id, 'work_hours', Math.floor(worked / HOUR)); bump(db, id, 'work_gold', wages);
   clearWork(db, id, wages);
+  gatherBlood(db, id, 'work', Math.floor(worked / HOUR));
   return { wages, cancelled: true, minutesWorked: Math.floor(worked / MIN) };
 }
 

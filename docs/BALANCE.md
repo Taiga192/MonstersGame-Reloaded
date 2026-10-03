@@ -39,6 +39,32 @@ rate on the admin page.
   characters) to 57 (level 80+).
 * The weekly dungeon ranking only lists players who fought that week (otherwise a checkpoint on level 50 would already be a score).
 
+## The shrine (idle automation)
+Design rules (yours): automation is **always clearly weaker than playing**, nothing can be bought with real money, and people with
+little time must be able to progress. So: 60 % of the manual pay, +2.5 % for each of 6 part tiers, **75 % at best**; the usual daily
+limits stay (3 h of hunting, one dungeon run); tier I parts are sold in the shop for everybody, tier II parts are found by playing
+(large towns, dungeon guardians) or traded; fuel (animal blood) comes from playing, a manual hunt portion or work hour gathers 1 and an
+automated hour burns 1, so a little play funds a lot of automation; the tank holds 60 hours (more with Chalices).
+
+Measured (same seed, 150 days, median level on the last day):
+
+| Population | no shrine | with shrine |
+|---|---|---|
+| active (log in all day) | 86 | 83 |
+| low time (play about six times less often) | 52 | 58 |
+
+* An **active** player who uses the shrine instead of a manual away activity loses about 3 %: 75 % of an hour is less than 100 %.
+  That is the intended price of convenience; nobody is forced into it.
+* For the **low-time** population the median level is about 11 % higher; the better play styles gain 3-7 %, the lowest ones (casual,
+  worker) about nothing, because a manual graveyard shift of up to 48 hours already covers a player who logs in every other day at
+  100 %. The real gain of the shrine is what cannot be done by hand: a 3 hour hunt **every** day while away for days, and the daily
+  dungeon run (needs presence otherwise). Real low-time players, who do not manage their away time as well as the bots do, should gain more.
+* Fuel: about a fifth of the low-time shrines are out of blood at any time; the active ones almost never. If low-time players feel the
+  shrine stops too often, raise the blood gathered per action or the tank (both on the admin page) before touching the efficiency.
+* Tier II parts: each bot found about 8 in 150 days with the first drop rates (1 % per large town, 15 % per guardian), which filled 94 %
+  of all slots, so the rates were lowered to 0.6 % and 10 %: a full set takes roughly half a year on average, and the market and
+  duplicates matter.
+
 ## What changed
 * **Equipment now carries a character to level 100.** Five gear lines with 25 tiers each (a new tier every 4 levels: Blade/Strength,
   Plate/Defence, Hide/Stamina, Talon/Agility, Gauntlet/Dexterity), 14 Stat Rings, 12 Plunder Rings, 12 Tracker Rings, 6 Amulets of

@@ -99,6 +99,17 @@ GitHub Pages can only host static files, so there is no server and no database s
 - [x] Automatic bots (personas, clans, wars, arena, market, dungeon; they start from zero)
 - [ ] Balance pass against real-game data
 
+## The shrine (idle PvE, a new mechanic)
+For players who cannot be online all day: the shrine hunts, works and delves for you while you are away, **always clearly weaker than playing by hand** (60 % of the pay, 75 % at best) and with **nothing that can be bought with real money**.
+- **Unlocked at level 10** (Town -> Shrine, 1,500 gold from the NPC shop). It runs a **routine** of up to 3 steps (more with a Bone Altar): "hunt 6 portions", "work 4 hours", and, with an Idol of the Hunt, "dungeon run (up to 30 fights)".
+- **Animal blood** is the fuel. Every manual action gathers some on the way (a hunt portion, a work hour, a raid, a dungeon fight: 1 each). An automated hour burns 1. So playing a little funds a lot of automation. The tank holds 60 blood (60 hours of running, which is also the longest it can run unattended).
+- **Parts** (Town -> Store -> Shrine parts, and found while playing): Blood Chalice (bigger tank), Bone Altar (more routine steps), Idol of the Hunt (I: dungeon automation, II: +50 % blood gathered). Tier I costs 800 gold in the shop for everybody; tier II is **not sold**: it is found in large towns while hunting and when dungeon guardians fall, or bought from other players in the Blood Temple. Every installed tier adds **+2.5 % efficiency** (60 % -> 75 % with all six).
+- The usual limits stay: 3 hours of hunting a day (shared with manual hunting), one dungeon run a day. A dungeon run is all or nothing (paused = cancelled).
+- **No protection while it runs:** an automated player can be raided, but a raid takes at most **3 %** of their gold.
+- Hunting, working, raiding or entering the dungeon by hand **pauses** it (the step in progress is paid pro rata, unused blood comes back); shopping, mail, clan and the market do not.
+- Nothing runs in the background: the server works out what the shrine did when you come back (or when anything asks for your numbers), like hunts and shifts.
+- Every number is on the admin page (Shrine group).
+
 ## Admin page (rates, cooldowns, wipes, speed servers)
 An **Admin** entry appears in the menu for admins. There you can change, without touching code and effective immediately:
 * **Rates:** an XP multiplier, a gold multiplier (hunting, graveyard work, relic dealer, bites; gold taken from other players is not multiplied) and the XP needed per level.

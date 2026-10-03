@@ -6,6 +6,8 @@ import { GameError } from './errors.ts';
 import type { Rng } from './rng.ts';
 import * as auth from './game/auth.ts';
 import * as admin from './game/admin.ts';
+import * as shrine from './game/shrine.ts';
+import { tankSize } from './game/blood.ts';
 import { applyPreset, applySettings, describeSettings, PRESETS, resetAllSettings, resetSetting, setSetting } from './settings.ts';
 import { LoginGuard } from './game/lockout.ts';
 import { cleanBody, pageNumber } from './game/validate.ts';
@@ -61,9 +63,17 @@ export function createApi({ db, now, rng, devClock, assets, middleware = [], glo
   /** JSON body through the input firewall (an empty or unparsable body counts as {} and fails the handler's own validation). */
   const body = async (c: Context) => cleanBody(await c.req.json().catch(() => ({})));
   /** Authenticated action wrapped in a transaction. */
+  // Activities that need the character's full attention: a running shrine stops first (one thing at a time, and no automated
+  // hunting while you raid). Everything else (shopping, mail, clan, market ...) can be done with the shrine running.
+  const MANUAL = new Set(['/api/hunt/start', '/api/work/start', '/api/dungeon/enter', '/api/raid/search', '/api/raid/attack', '/api/clan/war/attack',
+    '/api/arena/create', '/api/arena/join', '/api/ancestral/challenge']);
   const act = <T>(fn: (id: number, b: Record<string, any>, c: Context) => T) => async (c: Context) => {
     const id = me(c); const b = await body(c);
-    return c.json(tx(db, () => fn(id, b, c)) ?? { ok: true });
+    return c.json(tx(db, () => {
+      shrine.settle(db, id, now(), rng); // what the shrine did while you were away is paid before anything else happens
+      if (MANUAL.has(c.req.path)) shrine.pause(db, id, now(), rng);
+      return fn(id, b, c);
+    }) ?? { ok: true });
   };
 
   // ---- public ----
@@ -72,7 +82,7 @@ export function createApi({ db, now, rng, devClock, assets, middleware = [], glo
   app.get('/api/assets', (c) => c.json(assets?.() ?? {}));
   app.get('/api/catalog', (c) => c.json({ items: ITEMS, sentinels: SENTINELS, ancestral: ANCESTRAL, hideoutMax: CFG.hideoutMax,
     accomplishments: ACCOMPLISHMENTS.map(({ key, name, desc, tiers }) => ({ key, name, desc, tiers })), accSets: ACC_SETS, accSetSize: ACC_SET_SIZE,
-    hardenMax: CFG.hardenMax, hardenBonus: CFG.hardenBonusPerLevel, vitalityCap: CFG.vitalityCap, vitalityGain: CFG.vitalityGain, templeFee: CFG.templeFee, arenaSizes: CFG.arenaTournamentSizes, arenaMinLevel: CFG.arenaMinLevel,
+    shrineLevel: CFG.shrineLevel, shrineTankPerTier: CFG.shrineTankPerTier, shrineSlotsPerTier: CFG.shrineSlotsPerTier, shrineBloodBonus: CFG.shrineBloodBonus, shrineEfficiencyPerUpgrade: CFG.shrineEfficiencyPerUpgrade, shrineRaidLossCap: CFG.shrineRaidLossCap, huntPortionMs: CFG.huntPortion, hardenMax: CFG.hardenMax, hardenBonus: CFG.hardenBonusPerLevel, vitalityCap: CFG.vitalityCap, vitalityGain: CFG.vitalityGain, templeFee: CFG.templeFee, arenaSizes: CFG.arenaTournamentSizes, arenaMinLevel: CFG.arenaMinLevel,
     arenaStartHourUtc: CFG.arenaDailyStartHourUtc, registrationRequired: !!registrationCode, passwordMin: CFG.passwordMin, passwordMax: CFG.passwordMax }));
   app.post('/api/register', async (c) => {
     const b = await body(c);
@@ -105,10 +115,11 @@ export function createApi({ db, now, rng, devClock, assets, middleware = [], glo
   app.get('/api/me', (c) => {
     const id = me(c);
     return c.json(tx(db, () => {
-      const t = now(); const p = loadPlayer(db, id, t);
+      const t = now(); shrine.settle(db, id, t, rng); const p = loadPlayer(db, id, t);
       const { pass_hash: _, ...pub } = p;
       return {
-        ...pub, isAdmin: admin.isAdmin(db, id, singlePlayer), hp: Math.floor(p.hp), serverNow: t, xpToNext: CFG.xpToNext(p.level),
+        ...pub, blood: Math.floor(p.blood * 10) / 10, bloodMax: tankSize(db, id), shrine: (db.prepare('SELECT status FROM shrine WHERE player_id = ?').get(id) as { status: string } | undefined)?.status ?? null,
+        isAdmin: admin.isAdmin(db, id, singlePlayer), hp: Math.floor(p.hp), serverNow: t, xpToNext: CFG.xpToNext(p.level),
         attackReadyAt: p.last_attack_at + CFG.attackCooldown,
         found: p.found_target && t - p.found_at <= CFG.searchValidity
           ? db.prepare('SELECT id, name, level, race FROM players WHERE id = ?').get(p.found_target) : null,
@@ -160,6 +171,15 @@ export function createApi({ db, now, rng, devClock, assets, middleware = [], glo
   app.post('/api/work/collect', act((id) => eco.collectWork(db, id, now())));
   app.post('/api/work/cancel', act((id) => eco.cancelWork(db, id, now())));
   app.post('/api/ancestral/challenge', act((id) => eco.ancestralChallenge(db, id, now(), rng)));
+
+  // ---- shrine: automation of hunting and work ----
+  app.get('/api/shrine', (c) => { const id = me(c); return c.json(tx(db, () => { shrine.settle(db, id, now(), rng); return shrine.shrineState(db, id, now()); })); });
+  app.post('/api/shrine/buy', act((id) => shrine.buyShrine(db, id, now())));
+  app.post('/api/shrine/routine', act((id, b) => shrine.setRoutine(db, id, b.steps, now(), rng)));
+  app.post('/api/shrine/start', act((id) => shrine.start(db, id, now(), rng)));
+  app.post('/api/shrine/install', act((id, b) => shrine.installPart(db, id, b.inventoryId, now(), rng)));
+  app.post('/api/shrine/remove', act((id, b) => shrine.removePart(db, id, b.kind, now(), rng)));
+  app.post('/api/shrine/pause', act((id) => shrine.pause(db, id, now(), rng)));
 
   // ---- raid ----
   app.post('/api/raid/search', act((id) => raid.searchOpponent(db, id, now(), rng)));
@@ -313,6 +333,7 @@ export function createApi({ db, now, rng, devClock, assets, middleware = [], glo
       db.prepare('UPDATE players SET level = ?, xp = 0, max_hp = ?, hp = ?, hp_at = ? WHERE id = ?')
         .run(lv, CFG.startMaxHp + (lv - 1) * CFG.levelUpMaxHp, CFG.startMaxHp + (lv - 1) * CFG.levelUpMaxHp, now(), id);
     });
+    dev('blood', (id) => { db.prepare('UPDATE players SET blood = ? WHERE id = ?').run(tankSize(db, id), id); });
     dev('heal', (id) => { db.prepare('UPDATE players SET hp = max_hp, hp_at = ? WHERE id = ?').run(now(), id); });
     dev('skip', (_id, b) => { devClock.offset += Math.max(0, Number(b.minutes) || 0) * 60_000; arena.tick(db, now(), rng); return { serverNow: now() }; });
     dev('bots', (id, b) => {
