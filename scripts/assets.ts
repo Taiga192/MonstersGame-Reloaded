@@ -66,13 +66,15 @@ const banners: [string, string][] = [
   ['highscore', 'A grand hall of fame with carved names, statues and a towering throne'],
   ['profile', 'A dark portrait gallery with candles'],
   ['bite', 'A lone frightened villager on a foggy road at night, seen from a predator eye view'],
+  ['skills', 'A vast night sky of glowing constellations connected by thin lines of light, like a map of destinies above a gothic city'],
+  ['shrine', 'A moss-covered blood shrine in a dark forest clearing at dusk, candles, bones and a glowing basin of crimson liquid'],
 ];
 for (const [k, s] of banners) add('Banners', `banners/${k}`, 1200, 240, false, s, k === 'login' || k === 'overview' || k === 'raid' || k === 'hunt' ? 1 : 2, `Top banner of the ${k} page`);
 
 // ---------- navigation & UI icons ----------
 const nav: [string, string][] = [['overview', 'a hooded figure bust'], ['raid', 'crossed dagger and claw'], ['hunt', 'a glowing predator eye'], ['dungeon', 'a torch-lit archway leading down into darkness'], ['town', 'a gothic house with a lantern'],
   ['hideout', 'a fortified tower'], ['ancestral', 'a glowing standing stone'], ['arena', 'crossed swords over a round arena'], ['acc', 'a trophy medal'],
-  ['clan', 'a war banner on a pole'], ['mail', 'a sealed envelope with a wax seal'], ['messages', 'a battle report scroll'], ['highscore', 'a crown']];
+  ['skills', 'a glowing constellation of connected stars'], ['clan', 'a war banner on a pole'], ['mail', 'a sealed envelope with a wax seal'], ['messages', 'a battle report scroll'], ['highscore', 'a crown']];
 for (const [k, s] of nav) add('Navigation icons', `nav/${k}`, 64, 64, true, `Menu icon: ${s}`, 1, 'Header menu');
 const stat: [string, string][] = [['str', 'a clenched fist'], ['def', 'a shield'], ['agi', 'a winged boot'], ['sta', 'a beating heart in armor'], ['dex', 'a magnifying eye']];
 for (const [k, s] of stat) add('Stat & resource icons', `icons/stat_${k}`, 64, 64, true, `Stat icon: ${s}`, 1, 'Attributes table');
@@ -94,16 +96,24 @@ for (const [k, s] of [['village', 'A tiny sleepy village of a few thatched huts 
 add('Hunting', 'hunt/nothing', 600, 300, false, 'Empty foggy street, the trail has gone cold', 3, 'Failed hunt portion', 'tile');
 
 // ---------- item icons (generated from the catalog) ----------
-const BLADES = ['rusted iron shortsword', 'plain steel sword', 'balanced falchion', 'silvered longsword', 'runed broadsword', 'serrated blood-blade', 'obsidian-edged greatsword', 'moonlit silver claymore', 'hellforged cleaver', 'dragonbone executioner sword', 'soul-drinking curved sabre', 'legendary greatsword blazing with crimson runes'];
-const PLATES = ['dented iron breastplate', 'riveted steel cuirass', 'black-lacquered chest armor', 'spiked bastion plate', 'silvered knight armor', 'crimson-trimmed war plate', 'obsidian plate with horns', 'gothic cathedral armor with winged pauldrons', 'runed dread armor', 'dragon-scale plate', 'ethereal ghost-steel armor', 'legendary armor wreathed in violet flame'];
-const HIDES = ['ragged wolf-pelt cloak', 'boiled leather jerkin', 'studded leather vest', 'reinforced hide armor', 'scaled beast-hide coat', 'fang-adorned mantle', 'bone-plated hide armor', 'shadow-stitched leather coat', 'wyvern-hide armor', 'ancient troll-hide armor', 'spirit-woven pelt armor', 'legendary armor of a mythic beast, glowing sinews'];
-const RING_MAT = ['bronze', 'iron', 'silver', 'gold', 'black gold with a gemstone', 'crimson relic metal with a glowing gem'];
+// 25 materials, from rusty iron to world-ending: the look of gear tier N (one tier every 4 levels)
+const MATERIAL = ['rusted iron', 'plain steel', 'tempered steel', 'silvered', 'runed', 'crimson-etched', 'obsidian', 'moonlit silver', 'hellforged', 'bone-white', 'blood-quenched', 'shadow-forged', 'starmetal', 'dragonbone', 'abyssal black', 'eclipse-lit', 'ember-veined', 'frost-wrought', 'storm-bound', 'soul-bound', 'wraith-touched', 'sunless', 'titanic', 'godslayer', 'world-ending'];
+const SHAPE: Record<string, string[]> = {
+  Blade: ['shortsword', 'sword', 'falchion', 'longsword', 'broadsword', 'greatsword', 'claymore'], Plate: ['breastplate', 'cuirass', 'chest armor', 'war plate', 'knight armor', 'bastion plate'],
+  Hide: ['pelt cloak', 'leather jerkin', 'studded vest', 'hide armor', 'beast-hide coat', 'fang-adorned mantle'], Talon: ['curved dagger', 'claw blade', 'stiletto', 'hooked talon', 'twin knives'], Gauntlet: ['gauntlet', 'clawed glove', 'armored fist', 'spiked bracer'],
+};
+const RING_MAT = ['bronze', 'iron', 'silver', 'gold', 'black gold with a gemstone', 'crimson relic metal with a glowing gem', 'moonstone', 'obsidian', 'bone and gold', 'star-silver', 'blood-ruby', 'abyssal', 'sunstone', 'void-glass'];
+const PART = { chalice: 'an ornate chalice for blood on a stand', altar: 'a small altar of carved bone with candles', idol: 'a carved wooden idol of a hunting beast with glowing eyes' };
 for (const it of ITEMS) {
-  const m = /^itm_(Blade|Plate|Hide)_(\d+)$/.exec(it.key);
+  const m = /^itm_(Blade|Plate|Hide|Talon|Gauntlet)_(\d+)$/.exec(it.key);
   const rk = /^ring_(stat|battle|hunt)_(\d+)$/.exec(it.key);
+  const part = /^shrine_(chalice|altar|idol)_(\d)$/.exec(it.key);
+  const might = /^amulet_might_(\d+)$/.exec(it.key);
   let s: string;
-  if (m) s = ({ Blade: BLADES, Plate: PLATES, Hide: HIDES } as const)[m[1] as 'Blade'][+m[2] - 1] + (m[1] === 'Blade' ? ', weapon' : ', body armor');
+  if (m) { const shapes = SHAPE[m[1]]; const t = +m[2] - 1; s = `${MATERIAL[t]} ${shapes[t % shapes.length]}, ${m[1] === 'Blade' || m[1] === 'Talon' ? 'weapon' : m[1] === 'Gauntlet' ? 'hand armor' : 'body armor'}, tier ${t + 1} of 25: ${t < 8 ? 'plain and worn' : t < 16 ? 'finely made with gothic details' : 'ornate, glowing, legendary'}`; }
   else if (rk) s = `${RING_MAT[+rk[2] - 1]} ring, ${{ stat: 'engraved with a stylized eye and wing motif', battle: 'shaped like a grasping claw around a gold coin', hunt: 'set with a tracking eye gem' }[rk[1] as 'stat']}`;
+  else if (might) s = `heavy ${MATERIAL[(+might[1] - 1) * 4 + 3]} amulet of might on a thick chain, tier ${might[1]} of 6, a clenched fist motif`;
+  else if (part) s = `${PART[part[1] as 'chalice']}, ${part[2] === '1' ? 'simple and worn' : 'ornate, with a faint crimson glow'}`;
   else if (it.key === 'amulet_perfection') s = 'flawless crystal amulet in gold filigree radiating pale light';
   else if (it.key === 'amulet_healing') s = 'green-gem amulet on a silver chain glowing softly';
   else if (it.key === 'potion_heal') s = 'round glass flask of glowing red healing potion with a cork';
@@ -111,7 +121,7 @@ for (const it of ITEMS) {
   else s = it.name;
   add('Items', `items/${it.key}`, 256, 256, true, `${it.name}: ${s}`, 2, `Store, inventory, temple (${it.slot})`);
 }
-for (const [k, s] of [['weapon', 'crossed swords'], ['armor', 'a chest plate'], ['ring', 'a jeweled ring'], ['amulet', 'an amulet on a chain'], ['potion', 'a potion flask']] as const)
+for (const [k, s] of [['weapon', 'crossed swords'], ['armor', 'a chest plate'], ['ring', 'a jeweled ring'], ['amulet', 'an amulet on a chain'], ['potion', 'a potion flask'], ['component', 'a blood chalice (shrine parts)']] as const)
   add('Items', `items/cat_${k}`, 64, 64, true, `Category icon: ${s}`, 1, 'Store and inventory category tabs');
 
 // ---------- sentinels ----------
@@ -126,6 +136,11 @@ const SENT: Record<string, string> = {
   Djinn: 'a smoky djinn with burning eyes', Kraken: 'a tentacled kraken rising from dark water', Leviathan: 'a serpentine leviathan with glowing scales', Dragon: 'a great crimson dragon coiled, roaring', Archdemon: 'a horned archdemon wreathed in hellfire, the ultimate guardian',
 };
 for (const s of SENTINELS) add('Sentinels', `sentinels/${s.key}`, 512, 512, true, `Guardian creature "${s.name}": ${SENT[s.name] ?? s.name}, menace increases with tier ${s.key.replace('sen_', '')} of 40`, 2, 'Sentinel market and owned sentinel', 'icon');
+
+// ---------- skill board ----------
+add('Skill board', 'skills/board_bg', 1600, 1600, false, 'Background of the skill board: a vast dark night sky with faint nebulae and a very subtle circular pattern in the middle, low contrast so glowing dots and lines stay readable on top', 2, 'Skill board page', 'scene');
+for (const [k, s] of [['hunter', 'a predator eye over a village roof'], ['warrior', 'a blood-red war helm'], ['shadow', 'a dagger dissolving into smoke'], ['delver', 'a torch in a dark archway'], ['warden', 'a heavy iron shield'], ['artisan', 'a gravedigger shovel crossed with a hammer'], ['acolyte', 'a chalice of blood']] as const)
+  add('Skill board', `skills/region_${k}`, 128, 128, true, `Emblem of the "${k}" skill region: ${s}`, 2, 'Skill board legend', 'badge');
 
 // ---------- hideout ----------
 const HIDE: Record<string, { label: string; stages: string[] }> = {

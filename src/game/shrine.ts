@@ -15,6 +15,7 @@ import type { Rng } from '../rng.ts';
 import { installedParts, routineSlots, tankSize, upgradeCount } from './blood.ts';
 import { delveAuto, MIN_FIGHT_MS } from './dungeon.ts';
 import { bump } from './counters.ts';
+import { modsOf } from './mods.ts';
 import { resolveHunt, wagesFor } from './economy.ts';
 import { assertFree, awardXp, isBusy, loadPlayer, type Player } from './player.ts';
 
@@ -25,7 +26,9 @@ interface Row { player_id: number; level: number; status: ShrineStatus; routine:
 const getRow = (db: DB, id: number) => db.prepare('SELECT * FROM shrine WHERE player_id = ?').get(id) as Row | undefined;
 export const stepText = (s: Step) => `${s.kind}:${s.amount}`;
 const stepMs = (s: Step) => (s.kind === 'hunt' ? s.amount * CFG.huntPortion : s.kind === 'work' ? s.amount * HOUR : s.amount * Math.max(CFG.dungeonFightCooldown, MIN_FIGHT_MS));
-const bloodFor = (s: Step) => (stepMs(s) / HOUR) * CFG.shrineBloodPerHour;
+/** Fuel one step burns: the configured cost per hour, less what the skill board saves (Acolyte). */
+const fuelPerHour = (db: DB, id: number) => CFG.shrineBloodPerHour * (1 - (modsOf(db.prepare('SELECT skill_mods FROM players WHERE id = ?').get(id) as { skill_mods: string }).shrineFuel ?? 0));
+const bloodFor = (db: DB, id: number, s: Step) => (stepMs(s) / HOUR) * fuelPerHour(db, id);
 const routineOf = (r: Row): Step[] => (JSON.parse(r.routine) as string[]).map((t) => { const [kind, amount] = t.split(':'); return { kind: kind as Step['kind'], amount: Number(amount) }; });
 
 /** What share of a manual hour an automated hour pays: the base plus 2.5 % per installed part tier, never above CFG.shrineMaxEfficiency. */
@@ -78,7 +81,7 @@ export function start(db: DB, id: number, now: number, rng: Rng) {
   assertFree(p, now);
   assert(!p.hunt_started && !p.work_started, 'uncollected', 'Collect your hunt or wages first');
   const step = steps[s.step % steps.length];
-  assert(charge(db, id, step), 'no_blood', `The shrine needs ${bloodFor(step)} blood for this step. Play (hunt, work, raid, delve) to gather more`);
+  assert(charge(db, id, step), 'no_blood', `The shrine needs ${Math.ceil(bloodFor(db, id, step) * 10) / 10} blood for this step. Play (hunt, work, raid, delve) to gather more`);
   db.prepare("UPDATE shrine SET status = 'running', step = ?, step_at = ? WHERE player_id = ?").run(s.step % steps.length, now, id);
 }
 
@@ -126,7 +129,7 @@ export function removePart(db: DB, id: number, kind: unknown, now: number, rng: 
 
 // ---------------------------------------------------------------- running
 function charge(db: DB, id: number, step: Step): boolean {
-  const need = bloodFor(step);
+  const need = bloodFor(db, id, step);
   const have = (db.prepare('SELECT blood FROM players WHERE id = ?').get(id) as { blood: number }).blood;
   if (have + 1e-9 < need) return false;
   db.prepare('UPDATE players SET blood = MAX(0, blood - ?) WHERE id = ?').run(need, id);
@@ -211,7 +214,7 @@ export function pause(db: DB, id: number, now: number, rng: Rng) {
   if (!busy) pay(db, id, step, done, now, budget, now, rng);
   saveBudget(db, id, budget);
   const doneMs = step.kind === 'hunt' ? done * CFG.huntPortion : step.kind === 'work' ? done * HOUR : 0;
-  refund(db, id, bloodFor(step) * (1 - Math.min(1, doneMs / dur)));
+  refund(db, id, bloodFor(db, id, step) * (1 - Math.min(1, doneMs / dur)));
   db.prepare("UPDATE shrine SET status = 'paused', step_at = ? WHERE player_id = ?").run(now, id);
 }
 
@@ -220,7 +223,7 @@ export function shrineState(db: DB, id: number, now: number) {
   const p = loadPlayer(db, id, now);
   const s = getRow(db, id);
   const base = { unlockLevel: CFG.shrineLevel, price: CFG.shrinePrice, unlocked: p.level >= CFG.shrineLevel, owned: !!s, dungeonUnlocked: (installedParts(db, id).idol ?? 0) >= 1, blood: Math.floor(p.blood * 10) / 10, tank: tankSize(db, id),
-    bloodPerHour: CFG.shrineBloodPerHour, slots: routineSlots(db, id), efficiency: shrineEfficiency(db, id), baseEfficiency: CFG.shrineBaseEfficiency, maxEfficiency: CFG.shrineMaxEfficiency,
+    bloodPerHour: Math.round(fuelPerHour(db, id) * 1000) / 1000, slots: routineSlots(db, id), efficiency: shrineEfficiency(db, id), baseEfficiency: CFG.shrineBaseEfficiency, maxEfficiency: CFG.shrineMaxEfficiency,
     parts: installedParts(db, id), upgrades: upgradeCount(db, id), bag: (db.prepare('SELECT id, item_key FROM inventory WHERE player_id = ? ORDER BY id').all(id) as { id: number; item_key: string }[]).filter((r) => ITEM_BY_KEY.get(r.item_key)?.component).map((r) => ({ id: r.id, key: r.item_key })) };
   if (!s) return { ...base, status: 'none' as const, routine: [] as string[], current: null, hoursOfFuel: 0 };
   const steps = routineOf(s);
@@ -228,6 +231,6 @@ export function shrineState(db: DB, id: number, now: number) {
   return {
     ...base, status: s.status, routine: steps.map(stepText), step: s.step,
     current: cur ? { index: s.step, step: stepText(cur), startedAt: s.step_at, endsAt: s.step_at + stepMs(cur) } : null,
-    hoursOfFuel: Math.floor((p.blood / Math.max(0.0001, CFG.shrineBloodPerHour)) * 10) / 10,
+    hoursOfFuel: Math.floor((p.blood / Math.max(0.0001, fuelPerHour(db, id))) * 10) / 10,
   };
 }

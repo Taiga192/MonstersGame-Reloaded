@@ -6,6 +6,7 @@ import { randRange, type Rng } from '../rng.ts';
 import { damage, hitChance } from './combat.ts';
 import { bump } from './counters.ts';
 import { gatherBlood } from './blood.ts';
+import { modsOf } from './mods.ts';
 import { maybeFindComponent } from './components.ts';
 import { assertFree, awardXp, battleStats, isInDungeon, loadPlayer, type Stats } from './player.ts';
 
@@ -125,9 +126,10 @@ export function enterDungeon(db: DB, id: number, now: number) {
   assert(!r.active, 'in_dungeon', 'You are already inside the dungeon');
   assert(now >= r.cooldown_until, 'cooldown', `You can enter again in ${Math.ceil((r.cooldown_until - now) / 60000)} min`);
   // dungeon HP is separate from real HP: always a full pool, however hurt you are outside
-  db.prepare('UPDATE dungeon SET active = 1, hp = ?, max_hp = ?, last_at = ?, runs = runs + 1, ready_at = 0 WHERE player_id = ?').run(p.max_hp, p.max_hp, now, id);
+  const pool = Math.round(p.max_hp * (1 + (modsOf(p).dungeonHp ?? 0)));
+  db.prepare('UPDATE dungeon SET active = 1, hp = ?, max_hp = ?, last_at = ?, runs = runs + 1, ready_at = 0 WHERE player_id = ?').run(pool, pool, now, id);
   db.prepare('UPDATE players SET dungeon_until = ? WHERE id = ?').run(now + CFG.dungeonIdleLimit, id);
-  return { hp: p.max_hp, depth: r.depth };
+  return { hp: pool, depth: r.depth };
 }
 
 export function leaveDungeon(db: DB, id: number, now: number) {
@@ -164,13 +166,15 @@ export function fight(db: DB, id: number, now: number, rng: Rng): DungeonFightRe
     return { ...base, won: false, died: true, hpLeft: 0, xp: 0, levelsGained: 0, drop: null, choice: null, nextDepth: r.depth, cooldownUntil, readyAt: null, checkpoint: null };
   }
 
-  const xp = mon.xp;
+  const m = modsOf(p);
+  const loot = 1 + (m.dungeonLoot ?? 0);
+  const xp = Math.round(mon.xp * (1 + (m.dungeonXp ?? 0)));
   const lv = awardXp(db, id, xp, now);
   const xpGained = lv.xpGained;
   let drop: { name: string; value: number } | null = null;
-  if (rng() < CFG.dungeonDropChance) {
+  if (rng() < CFG.dungeonDropChance + (m.dungeonDrop ?? 0)) {
     const row = lootRow(r.depth);
-    drop = { name: row[Math.floor(rng() * row.length)], value: Math.max(1, Math.round(CFG.dungeonLootValue(r.depth) * randRange(rng, 0.8, 1.2))) };
+    drop = { name: row[Math.floor(rng() * row.length)], value: Math.max(1, Math.round(CFG.dungeonLootValue(r.depth) * randRange(rng, 0.8, 1.2) * loot)) };
     addLoot(db, id, drop.name, drop.value, r.depth, false, now);
   }
   let choice: RewardOption[] | null = null;
@@ -179,7 +183,7 @@ export function fight(db: DB, id: number, now: number, rng: Rng): DungeonFightRe
     const names = [...relicRow(r.depth)]; const opts: RewardOption[] = [];
     for (let i = 0; i < CFG.dungeonRewardOptions && names.length; i++) {
       const [lo, hi] = CFG.dungeonRelicMultiplier;
-      opts.push({ name: names.splice(Math.floor(rng() * names.length), 1)[0], value: Math.round(CFG.dungeonLootValue(r.depth) * randRange(rng, lo, hi)) });
+      opts.push({ name: names.splice(Math.floor(rng() * names.length), 1)[0], value: Math.round(CFG.dungeonLootValue(r.depth) * randRange(rng, lo, hi) * loot) });
     }
     choice = opts;
   }
@@ -210,23 +214,24 @@ export function delveAuto(db: DB, id: number, startAt: number, fights: number, s
   if (r.pending) { const best = (JSON.parse(r.pending) as RewardOption[]).sort((a, b) => b.value - a.value)[0]; addLoot(db, id, best.name, best.value, r.depth - 1, true, now); }
   const p = loadPlayer(db, id, now);
   const stats = battleStats(db, p, { ancestral: p.level >= CFG.ancestralMinLevel });
-  let depth = r.depth, hp = p.max_hp, cleared = 0, died = false, xpTotal = 0, checkpoint = r.checkpoint;
+  const m = modsOf(p), loot = 1 + (m.dungeonLoot ?? 0), pool = Math.round(p.max_hp * (1 + (m.dungeonHp ?? 0)));
+  let depth = r.depth, hp = pool, cleared = 0, died = false, xpTotal = 0, checkpoint = r.checkpoint;
   const every = Math.max(1, CFG.dungeonCheckpoint);
   for (let i = 0; i < fights; i++) {
     const mon = monsterAt(depth);
-    const res = fightMonster(stats, hp, p.max_hp, mon, rng);
+    const res = fightMonster(stats, hp, pool, mon, rng);
     if (!res.won) { died = true; break; }
     hp = res.hpLeft;
-    xpTotal += awardXp(db, id, Math.max(1, Math.round(mon.xp * share)), now).xpGained;
-    if (rng() < CFG.dungeonDropChance) {
+    xpTotal += awardXp(db, id, Math.max(1, Math.round(mon.xp * (1 + (m.dungeonXp ?? 0)) * share)), now).xpGained;
+    if (rng() < CFG.dungeonDropChance + (m.dungeonDrop ?? 0)) {
       const row = lootRow(depth);
-      addLoot(db, id, row[Math.floor(rng() * row.length)], Math.max(1, Math.round(CFG.dungeonLootValue(depth) * randRange(rng, 0.8, 1.2) * share)), depth, false, now);
+      addLoot(db, id, row[Math.floor(rng() * row.length)], Math.max(1, Math.round(CFG.dungeonLootValue(depth) * randRange(rng, 0.8, 1.2) * share * loot)), depth, false, now);
     }
     if (mon.guardian) {
       const names = [...relicRow(depth)]; let best: RewardOption | null = null;
       for (let k = 0; k < CFG.dungeonRewardOptions && names.length; k++) {
         const [lo, hi] = CFG.dungeonRelicMultiplier;
-        const o = { name: names.splice(Math.floor(rng() * names.length), 1)[0], value: Math.round(CFG.dungeonLootValue(depth) * randRange(rng, lo, hi) * share) };
+        const o = { name: names.splice(Math.floor(rng() * names.length), 1)[0], value: Math.round(CFG.dungeonLootValue(depth) * randRange(rng, lo, hi) * share * loot) };
         if (!best || o.value > best.value) best = o;
       }
       if (best) addLoot(db, id, best.name, best.value, depth, true, now);
@@ -266,7 +271,7 @@ export function sellLoot(db: DB, id: number, lootId: number | 'all', now: number
     ? db.prepare('SELECT id, value FROM dungeon_loot WHERE player_id = ?').all(id)
     : db.prepare('SELECT id, value FROM dungeon_loot WHERE player_id = ? AND id = ?').all(id, lootId)) as { id: number; value: number }[];
   assert(rows.length, 'no_loot', 'Nothing to sell', 404);
-  const gold = Math.round(rows.reduce((s, r) => s + r.value, 0) * CFG.rateGold);
+  const gold = Math.round(rows.reduce((s, r) => s + r.value, 0) * CFG.rateGold * (1 + (modsOf(loadPlayer(db, id, now)).gold ?? 0)));
   db.prepare(`DELETE FROM dungeon_loot WHERE player_id = ? ${lootId === 'all' ? '' : 'AND id = ?'}`).run(...(lootId === 'all' ? [id] : [id, lootId]));
   db.prepare('UPDATE players SET gold = gold + ? WHERE id = ?').run(gold, id);
   return { gold, count: rows.length };

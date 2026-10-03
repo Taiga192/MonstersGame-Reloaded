@@ -652,7 +652,7 @@ test('UI: the shrine — locked below level 10, build it, set a routine, start, 
     doc.querySelector('#reg')!.dispatchEvent(new w.Event('submit', { cancelable: true }));
     await until(() => view().textContent!.includes('Attributes'), 'overview');
     assert.match(view().textContent!, /the shrine unlocks at level 10/);
-    await go('#/town/shrine', 'answer you from level');
+    await go('#/shrine', 'answer you from level');
     assert.match(view().textContent!, /from level 10/);
     assert.ok(!doc.querySelector('[data-do="/shrine/buy"]'), 'nothing to buy yet');
 
@@ -660,7 +660,7 @@ test('UI: the shrine — locked below level 10, build it, set a routine, start, 
     (doc.querySelector('#dl') as HTMLInputElement).value = '12'; await dev('[data-dev=level]');
     (doc.querySelector('#dg') as HTMLInputElement).value = '5000'; await dev('[data-dev=grant]');
     await dev('[data-dev=blood]');
-    await go('#/town/shrine', 'Build the shrine');
+    await go('#/shrine', 'Build the shrine');
     click('#view button', 'Build the shrine');
     await until(() => view().textContent!.includes('Routine'), 'shrine built');
     assert.match(view().textContent!, /not started/);
@@ -673,7 +673,7 @@ test('UI: the shrine — locked below level 10, build it, set a routine, start, 
     f.dispatchEvent(new w.Event('submit', { cancelable: true }));
     await until(() => doc.querySelector('#toast')!.textContent!.includes('Routine saved'), 'routine saved');
     await new Promise((r) => setTimeout(r, 200));
-    await go('#/town/shrine', 'Routine');
+    await go('#/shrine', 'Routine');
     assert.equal((doc.querySelector('#view select[name=kind0]') as HTMLSelectElement).value, 'hunt');
     click('#view button', 'Start');
     await until(() => view().textContent!.includes('Now: Hunt 6'), 'running');
@@ -682,10 +682,76 @@ test('UI: the shrine — locked below level 10, build it, set a routine, start, 
     // the overview shows it too
     await go('#/overview', 'Attributes');
     assert.match(view().textContent!, /Shrine: running/);
-    await go('#/town/shrine', 'Routine');
+    await go('#/shrine', 'Routine');
     click('#view button', 'Pause');
     await until(() => [...doc.querySelectorAll('#view button')].some((b) => /Resume/.test(b.textContent!)), 'paused: a Resume button appears');
     assert.match(view().textContent!, /paused/);
+    assert.deepEqual(errors, []);
+  } finally { close(); }
+});
+
+test('UI: the skill board — 250+ nodes, pick a class, take connected nodes, see the bonuses, take one back', async () => {
+  const { w, doc, until, view, go, click, errors, close } = await boot();
+  try {
+    await until(() => !!doc.querySelector('#reg'), 'login page'); await new Promise((r) => setTimeout(r, 50)); // the page attaches its form handlers a tick after rendering
+    (doc.querySelector('#reg [name=name]') as HTMLInputElement).value = 'Pathmaker';
+    (doc.querySelector('#reg [name=password]') as HTMLInputElement).value = 'secret12';
+    doc.querySelector('#reg')!.dispatchEvent(new w.Event('submit', { cancelable: true }));
+    await until(() => view().textContent!.includes('Attributes'), 'overview');
+    assert.match(view().textContent!, /Skill points: 1/, 'one point at level 1');
+    const dev = async (sel: string) => { (doc.querySelector(sel) as HTMLElement).click(); await new Promise((r) => setTimeout(r, 250)); };
+    (doc.querySelector('#dl') as HTMLInputElement).value = '10'; await dev('[data-dev=level]');
+    (doc.querySelector('#dg') as HTMLInputElement).value = '5000'; await dev('[data-dev=grant]');
+    assert.ok(doc.querySelector('#top nav')!.textContent!.includes('Skills'), 'menu entry');
+    await go('#/skills', 'Skill board');
+    await until(() => doc.querySelectorAll('#skill-svg g[data-node]').length > 250, 'the board is drawn');
+    assert.match(view().textContent!, /10\s*of 10 points to spend/);
+    assert.match(view().textContent!, /no class yet/);
+    const node = (id: string) => doc.querySelector(`#skill-svg g[data-node="${id}"]`) as SVGGElement;
+    const panel = () => doc.querySelector('#skill-panel')!.textContent!;
+    // a middle node cannot be the first point
+    node('hunter.a1').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+    await until(() => panel().includes('Plunder 1') && panel().includes('Pick a start node first'), 'panel for a node you cannot take');
+    // pick the class
+    node('hunter.start').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+    await until(() => panel().includes('Lone Hunter') && panel().includes('Take (1 point)'), 'panel for a start node');
+    assert.match(panel(), /gold from hunts/);
+    click('#skill-panel button', 'Take (1 point)');
+    await until(() => view().textContent!.includes('Lone Hunter') && /9\s*of 10/.test(view().textContent!), 'class chosen, 9 points left');
+    assert.match(view().textContent!, /\+2% gold from hunts/, 'the bonus is listed');
+    // hovering shows a tooltip: what it does, what it costs, whether it can be learned
+    const tip = () => doc.querySelector('#skill-tip') as HTMLElement;
+    const hover = (id: string) => node(id).dispatchEvent(new w.MouseEvent('mouseenter', { bubbles: true, clientX: 300, clientY: 200 }));
+    hover('hunter.a1');
+    assert.equal(tip().style.display, 'block');
+    assert.match(tip().textContent!, /Plunder 1/); assert.match(tip().textContent!, /1 point/); assert.match(tip().textContent!, /\+1% gold from hunts/); assert.match(tip().textContent!, /Double-click to learn/);
+    hover('hunter.start'); assert.match(tip().textContent!, /Learned/);
+    hover('hunter.key'); assert.match(tip().textContent!, /Lone Wolf/); assert.match(tip().textContent!, /3 points/); assert.match(tip().textContent!, /Not connected/);
+    hover('hunter.a3'); assert.match(tip().textContent!, /2 points/, 'a notable costs 2');
+    node('hunter.a3').dispatchEvent(new w.MouseEvent('mouseleave', { bubbles: true })); assert.equal(tip().style.display, 'none');
+    // a double click learns a node that touches the class
+    node('hunter.a1').dispatchEvent(new w.MouseEvent('dblclick', { bubbles: true }));
+    await until(() => /8\s*of 10/.test(view().textContent!), 'double-click learned a1: 8 left');
+    // a double click on a node that does not touch the build only explains why
+    node('hunter.b3').dispatchEvent(new w.MouseEvent('dblclick', { bubbles: true }));
+    await until(() => doc.querySelector('#toast')!.textContent!.includes('Not connected'), 'explained');
+    assert.match(view().textContent!, /8\s*of 10/, 'nothing was spent');
+    assert.match(view().textContent!, /\+3% gold from hunts/);
+    // a node that does not touch the build is refused in the panel
+    node('hunter.b3').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+    await until(() => panel().includes('Keen Eyes') && panel().includes('Not connected'), 'not connected');
+    // taking one back: only the end of the branch, costs gold
+    node('hunter.start').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+    await until(() => panel().includes('Lone Hunter') && panel().includes('Take back'), 'refund offered');
+    click('#skill-panel button', 'Take back');
+    await until(() => doc.querySelector('#toast')!.textContent!.includes('cut other nodes off'), 'the start node cannot be taken back while a1 hangs on it');
+    node('hunter.a1').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+    await until(() => panel().includes('Plunder 1') && panel().includes('Take back'), 'a1 can be taken back');
+    click('#skill-panel button', 'Take back');
+    await until(() => /9\s*of 10/.test(view().textContent!), 'point returned');
+    // the overview shows the points
+    await go('#/overview', 'Attributes');
+    assert.match(view().textContent!, /Skill points: 9/);
     assert.deepEqual(errors, []);
   } finally { close(); }
 });

@@ -6,6 +6,7 @@ import { accomplishmentBonus } from './accomplishments.ts';
 import { simulate } from './combat.ts';
 import { bump } from './counters.ts';
 import { gatherBlood } from './blood.ts';
+import { discounted, factor, modsOf } from './mods.ts';
 import { maybeFindComponent } from './components.ts';
 import { assertFree, awardXp, battleStats, equipmentLoadout, isHunting, vitalityRoom, isWorking, loadPlayer, ownedItems, setHp, type Player } from './player.ts';
 
@@ -16,7 +17,7 @@ export function trainStat(db: DB, id: number, stat: Stat, now: number) {
   assert(MAIN_STATS.includes(stat), 'bad_stat', 'Unknown attribute');
   const p = loadPlayer(db, id, now);
   assertFree(p, now);
-  const cost = CFG.trainCost(p[stat]);
+  const cost = discounted(CFG.trainCost(p[stat]), p, 'trainDiscount');
   assert(p.gold >= cost, 'no_gold', `Need ${cost} gold`);
   db.prepare(`UPDATE players SET gold = gold - ?, ${stat} = ${stat} + 1 WHERE id = ?`).run(cost, id);
   return { stat, value: p[stat] + 1, cost };
@@ -30,16 +31,17 @@ export function buyItem(db: DB, id: number, key: string, now: number) {
   const p = loadPlayer(db, id, now);
   assertFree(p, now);
   assert(p.level >= item.minLevel, 'level_too_low', `Requires level ${item.minLevel}`);
-  assert(p.gold >= item.price, 'no_gold', `Need ${item.price} gold`);
+  const price = discounted(item.price, p, 'shopDiscount');
+  assert(p.gold >= price, 'no_gold', `Need ${price} gold`);
   assert(item.potion !== 'maxhp' || vitalityRoom(db, p) > 0, 'vitality_cap', `You cannot use any more Vitality Potions (maximum +${CFG.vitalityCap} max HP in total, counting the ones in your bag)`);
-  db.prepare('UPDATE players SET gold = gold - ? WHERE id = ?').run(item.price, id);
+  db.prepare('UPDATE players SET gold = gold - ? WHERE id = ?').run(price, id);
   db.prepare('INSERT INTO inventory (player_id, item_key, bought_at) VALUES (?,?,?)').run(id, key, now);
 }
 
 export function sellItem(db: DB, id: number, inventoryId: number, now: number) {
   const row = db.prepare('SELECT item_key FROM inventory WHERE id = ? AND player_id = ?').get(inventoryId, id) as { item_key: string } | undefined;
   assert(row, 'not_owned', 'You do not own that item', 404);
-  const price = Math.floor(ITEM_BY_KEY.get(row.item_key)!.price / 2); // items sell at 50 %
+  const price = Math.floor((ITEM_BY_KEY.get(row.item_key)!.price / 2) * factor(loadPlayer(db, id, now), 'sellBonus')); // items sell at 50 % (plus the skill board's bonus)
   db.prepare('DELETE FROM inventory WHERE id = ?').run(inventoryId);
   db.prepare('UPDATE players SET gold = gold + ? WHERE id = ?').run(price, id);
   return { price };
@@ -71,7 +73,7 @@ export function hardenWeapon(db: DB, id: number, inventoryId: number, now: numbe
   const def = ITEM_BY_KEY.get(row.item_key)!;
   assert(def.slot === 'weapon', 'not_weapon', 'Only weapons can be hardened');
   assert(row.hardening < CFG.hardenMax, 'maxed', `Already hardened to +${CFG.hardenMax}`);
-  const cost = CFG.hardenCost(def.price, row.hardening);
+  const cost = discounted(CFG.hardenCost(def.price, row.hardening), p, 'hardenDiscount');
   assert(p.gold >= cost, 'no_gold', `Need ${cost} gold`);
   db.prepare('UPDATE players SET gold = gold - ? WHERE id = ?').run(cost, id);
   db.prepare('UPDATE inventory SET hardening = hardening + 1 WHERE id = ?').run(inventoryId);
@@ -155,15 +157,19 @@ export function resolveHunt(db: DB, p: Player, portions: number, rng: Rng, now: 
   const lo = equipmentLoadout(db, p);
   const rewardMult = 1 + lo.huntBonus / 100 + accomplishmentBonus(db, p.id).huntReward; // hunt rings + accomplishments
   const events: HuntEvent[] = [];
+  const m = modsOf(p);
+  const fail = Math.max(0.02, CFG.huntFailChance(p.dex) + (m.huntFail ?? 0));
+  const shift = m.huntTown ?? 0; // towns instead of villages: the village chance gives way, mostly to small towns
+  const places = CFG.huntPlaces.map((pl) => ({ ...pl, chance: Math.max(0, pl.chance + (pl.key === 'village' ? -shift : pl.key === 'small_town' ? shift * 0.7 : shift * 0.3)) }));
   let xp = 0, gold = 0, largeTowns = 0;
   const found: string[] = []; // shrine parts found in large towns
   for (let i = 0; i < portions; i++) {
-    if (!lo.perfection && rng() < CFG.huntFailChance(p.dex)) { events.push({ place: 'nothing', xp: 0, gold: 0, failed: true }); continue; }
+    if (!lo.perfection && rng() < fail) { events.push({ place: 'nothing', xp: 0, gold: 0, failed: true }); continue; }
     let roll = rng();
-    const place = CFG.huntPlaces.find((pl) => (roll -= pl.chance) < 0) ?? CFG.huntPlaces[0];
+    const place = places.find((pl) => (roll -= pl.chance) < 0) ?? places[0];
     const mult = (1 + place.bonus) * rewardMult;
-    const g = Math.round(randInt(rng, CFG.huntVillage.gold[0], CFG.huntVillage.gold[1]) * mult * CFG.huntGoldLevelScale(p.level) * CFG.rateGold);
-    const x = Math.round(CFG.huntVillage.xp * mult);
+    const g = Math.round(randInt(rng, CFG.huntVillage.gold[0], CFG.huntVillage.gold[1]) * mult * CFG.huntGoldLevelScale(p.level) * CFG.rateGold * (1 + (m.huntGold ?? 0) + (m.gold ?? 0)));
+    const x = Math.round(CFG.huntVillage.xp * mult * (1 + (m.huntXp ?? 0)));
     events.push({ place: place.key, xp: x, gold: g, failed: false });
     if (place.key === 'large_town') { largeTowns++; const part = maybeFindComponent(db, p.id, CFG.componentDropLargeTown, now, rng); if (part) found.push(part.name); }
     xp += x; gold += g;
@@ -225,7 +231,8 @@ export function startWork(db: DB, id: number, hours: number, now: number) {
 }
 
 /** What `hours` of graveyard work pay a character (hours may be fractional: a shift cut short). */
-export const wagesFor = (db: DB, p: Player, hours: number, share = 1) => Math.floor(hours * CFG.workWagePerHour(p.level) * (1 + accomplishmentBonus(db, p.id).workWage) * share);
+export const wagesFor = (db: DB, p: Player, hours: number, share = 1) =>
+  Math.floor(hours * CFG.workWagePerHour(p.level) * (1 + accomplishmentBonus(db, p.id).workWage + (modsOf(p).workWage ?? 0)) * (1 + (modsOf(p).gold ?? 0)) * share);
 
 const clearWork = (db: DB, id: number, wages: number) =>
   db.prepare('UPDATE players SET gold = gold + ?, work_started = NULL, work_until = NULL, work_hours = NULL WHERE id = ?').run(wages, id);
@@ -234,7 +241,7 @@ export function collectWork(db: DB, id: number, now: number) {
   const p = loadPlayer(db, id, now);
   assert(p.work_started && p.work_until != null && p.work_hours != null, 'not_working', 'You are not working');
   assert(!isWorking(p, now), 'still_working', 'Your shift is not over yet');
-  const wages = Math.floor(p.work_hours! * CFG.workWagePerHour(p.level) * (1 + accomplishmentBonus(db, id).workWage));
+  const wages = wagesFor(db, p, p.work_hours!);
   bump(db, id, 'work_hours', p.work_hours!); bump(db, id, 'work_gold', wages);
   clearWork(db, id, wages);
   gatherBlood(db, id, 'work', p.work_hours!);
@@ -246,7 +253,7 @@ export function cancelWork(db: DB, id: number, now: number) {
   const p = loadPlayer(db, id, now);
   assert(p.work_started && p.work_hours != null && isWorking(p, now), 'not_working', 'You are not working');
   const worked = Math.min(now - p.work_started!, p.work_hours! * HOUR);
-  const wages = Math.floor((Math.floor(worked / MIN) / 60) * CFG.workWagePerHour(p.level) * (1 + accomplishmentBonus(db, id).workWage));
+  const wages = wagesFor(db, p, Math.floor(worked / MIN) / 60);
   bump(db, id, 'work_hours', Math.floor(worked / HOUR)); bump(db, id, 'work_gold', wages);
   clearWork(db, id, wages);
   gatherBlood(db, id, 'work', Math.floor(worked / HOUR));
@@ -259,7 +266,7 @@ export function ancestralChallenge(db: DB, id: number, now: number, rng: Rng) {
   assertFree(p, now);
   assert(p.level >= CFG.ancestralMinLevel, 'level_too_low', `Requires level ${CFG.ancestralMinLevel}`);
   assert(now - p.ancestral_at >= CFG.ancestralCooldown, 'cooldown', 'The ancestors rest; return in 24 hours');
-  const fee = CFG.ancestralFee(p.ancestral_wins);
+  const fee = discounted(CFG.ancestralFee(p.ancestral_wins), p, 'ancestralFee');
   assert(p.gold >= fee, 'no_gold', `The challenge costs ${fee} gold`);
   assert(p.hp >= CFG.hpProtectThreshold, 'too_weak', 'You are too weak');
   db.prepare('UPDATE players SET gold = gold - ?, ancestral_at = ? WHERE id = ?').run(fee, now, id);

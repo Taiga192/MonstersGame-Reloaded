@@ -7,9 +7,12 @@ import * as arena from '../game/arena.ts';
 import * as clan from '../game/clan.ts';
 import * as dungeon from '../game/dungeon.ts';
 import * as shrine from '../game/shrine.ts';
+import * as skills from '../game/skills.ts';
+import { NODE_BY_ID, NODES } from '../skills.ts';
+import { discounted } from '../game/mods.ts';
 import * as eco from '../game/economy.ts';
 import * as forum from '../game/forum.ts';
-import { battleStats, effectiveBonus, equipmentLoadout, isBusy, isHunting, isWorking, loadPlayer, ownedItems, type Player, isInDungeon } from '../game/player.ts';
+import { attackCooldownOf, battleStats, effectiveBonus, equipmentLoadout, isBusy, isHunting, isWorking, loadPlayer, ownedItems, type Player, isInDungeon } from '../game/player.ts';
 import { attack, searchOpponent } from '../game/raid.ts';
 import * as temple from '../game/temple.ts';
 import { warAttack, warOf } from '../game/war.ts';
@@ -92,6 +95,45 @@ export function runSession(ctx: Ctx, bot: BotRow): SessionResult {
   return { nextAt, sessionsLeft, actions };
 }
 
+// ---------------------------------------------------------------- skill board
+const KIND_VALUE: Record<string, number> = { small: 1, notable: 4, keystone: 6, origin: 0.6, hub: 0.5, bridge: 1 };
+/**
+ * Spend free skill points the way a player with a plan does: the first point picks the start node of the persona's favourite
+ * region, then every point goes one step along the shortest path to the most valuable node still out of reach
+ * (value = how much the persona likes its region, times what kind of node it is, divided by the distance).
+ */
+function skillTurn(ctx: Ctx, id: number, persona: Persona, note: (a: string) => void) {
+  const { db, now } = ctx;
+  if (skills.usedPoints(db, id) >= skills.pointsTotal(loadPlayer(db, id, now).level)) return;
+  const weight = (region: string) => { const parts = region.split('+'); return parts.reduce((s, r) => s + (persona.skills.weights[r] ?? (r === 'hub' ? 0.2 : 0)), 0) / parts.length; };
+  for (let spent = 0; spent < 15; spent++) {
+    const st = skills.skillState(db, id, now);
+    if (!st.free) return;
+    let pick: string | undefined;
+    if (!st.allocated.length) pick = `${Object.entries(persona.skills.weights).sort((a, b) => b[1] - a[1])[0][0]}.start`;
+    else {
+      // breadth first search outward from the build; remember the first step towards every node
+      const taken = new Set(st.allocated), first = new Map<string, string>(), dist = new Map<string, number>();
+      let frontier: string[] = [];
+      for (const n of NODES) if (!taken.has(n.id) && n.links.some((l) => taken.has(l))) { first.set(n.id, n.id); dist.set(n.id, 1); frontier.push(n.id); }
+      while (frontier.length) {
+        const next: string[] = [];
+        for (const f of frontier) for (const l of NODE_BY_ID.get(f)!.links) if (!taken.has(l) && !dist.has(l)) { dist.set(l, dist.get(f)! + 1); first.set(l, first.get(f)!); next.push(l); }
+        frontier = next;
+      }
+      let best = 0;
+      for (const [nid, d] of dist) {
+        const n = NODE_BY_ID.get(nid)!;
+        if (n.kind === 'keystone' && persona.skills.keystone !== n.region) continue; // keystones carry a drawback: only the persona that suits one takes it
+        const value = (weight(n.region) * KIND_VALUE[n.kind]) / (d * d); // near things first, but a notable three steps away beats a small node next door
+        if (value > best) { best = value; pick = first.get(nid); }
+      }
+    }
+    if (!pick || !ok(() => skills.allocate(db, id, pick, now))) return; // (a notable or keystone next in line may cost more than the points left: wait for the next level)
+    if (spent === 0) note('skill points');
+  }
+}
+
 // ---------------------------------------------------------------- shrine
 /** Buy the shrine once it is unlocked and affordable (with a cushion), buy and install the cheap tier I parts when there is spare gold, and give it a routine. */
 function shrineSetup(ctx: Ctx, p: Player, persona: Persona, note: (a: string) => void) {
@@ -138,6 +180,7 @@ function maintain(ctx: Ctx, id: number, persona: Persona, note: (a: string) => v
   if (rng() < persona.trade) { marketBuy(ctx, loadPlayer(db, id, now), persona, note); p = loadPlayer(db, id, now); } // player offers are cheaper than the shop
   spend(ctx, p, persona, note);
   shrineSetup(ctx, loadPlayer(db, id, now), persona, note);
+  skillTurn(ctx, id, persona, note);
   if (rng() < persona.trade) marketSell(ctx, id, persona, note);
   tuneAccomplishments(ctx, id, note);
   p = loadPlayer(db, id, now);
@@ -221,7 +264,7 @@ function spend(ctx: Ctx, p0: Player, persona: Persona, note: (a: string) => void
   p = loadPlayer(db, p.id, now);
   for (let i = 0; i < 25; i++) {
     const stat = pickWeighted(rng, persona.stats) as Stat;
-    const cost = CFG.trainCost(p[stat]);
+    const cost = discounted(CFG.trainCost(p[stat]), p, 'trainDiscount');
     if (budget < cost) break;
     if (attempt(() => eco.trainStat(db, p.id, stat, now)) === undefined) break;
     p = { ...p, [stat]: p[stat] + 1 }; budget -= cost;
@@ -245,7 +288,7 @@ const power = (s: { str: number; def: number; agi: number; sta: number }) => s.s
 function raid(ctx: Ctx, id: number, persona: Persona, note: (a: string) => void) {
   const { db, now, rng } = ctx;
   const p = loadPlayer(db, id, now);
-  if (rng() > persona.raid || p.hp < CFG.hpProtectThreshold || p.hp < p.max_hp * 0.5 || now - p.last_attack_at < CFG.attackCooldown) return;
+  if (rng() > persona.raid || p.hp < CFG.hpProtectThreshold || p.hp < p.max_hp * 0.5 || now - p.last_attack_at < attackCooldownOf(p)) return;
   if (warOf(db, id) && rng() < 0.85) { const r = attempt(() => warAttack(db, id, now, rng)); if (r) note(`war ${r.winner === p.name ? 'win' : 'loss'} vs ${r.target.name}`); return; }
   const mine = power(battleStats(db, p, { ancestral: p.level >= CFG.ancestralMinLevel }));
   for (let i = 0; i < 3; i++) {

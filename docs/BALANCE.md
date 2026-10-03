@@ -65,6 +65,27 @@ Measured (same seed, 150 days, median level on the last day):
   of all slots, so the rates were lowered to 0.6 % and 10 %: a full set takes roughly half a year on average, and the market and
   duplicates matter.
 
+## The skill board
+308 nodes, 1 point per level, **costs: start and small nodes 1, notables 2, keystones 3** (see README). The whole board costs 406 points,
+so a level 100 character can afford about a quarter of it and it takes level 200+ to reach half. Bots build it with a plan (a class from
+their favourite region, then the best notable within reach; keystones only for the style that suits one; a notable or keystone waits
+until the points for it are there). Measured, same seed, 150 days, median level on the last day:
+
+| Population | no board | board, 1 point per node | board with costs 1/2/3 |
+|---|---|---|---|
+| active (log in all day) | 83 | 92 (+11 %) | 90 (+8 %) |
+
+By style with costs (active population): hunter 89 -> 103, balanced 85 -> 91, brawler 81 -> 90, leader 81 -> 85, casual 66 -> 67, worker 69 -> 70.
+Bots take 28 % fewer nodes with costs (6,559 instead of 9,105 across 100 bots). A low-time population gained about 7 % in an earlier
+measurement (before node costs; not repeated).
+* The board speeds levelling up by about a twelfth, so level 100 comes at about day 170, close to the target before the board existed.
+  XP bonuses on the board are scaled by 0.7 (`XP_SCALE` in `src/skills.ts`). If it is too fast or slow, use the XP rate or the points
+  per level on the admin page; the notable and keystone prices are settings too.
+* **The Hunter is the strongest build for levelling** (+16 %), the Artisan (wages, prices) gives richer characters but no faster levels.
+  That is intentional: an economy build trades speed for gold. If you want the Hunter closer to the others, look at the Plunder and
+  Tracking arms (`REGION_DEFS` in `src/skills.ts`).
+* What a typical bot ends up with is far from every cap in `MODS`.
+
 ## What changed
 * **Equipment now carries a character to level 100.** Five gear lines with 25 tiers each (a new tier every 4 levels: Blade/Strength,
   Plate/Defence, Hide/Stamina, Talon/Agility, Gauntlet/Dexterity), 14 Stat Rings, 12 Plunder Rings, 12 Tracker Rings, 6 Amulets of

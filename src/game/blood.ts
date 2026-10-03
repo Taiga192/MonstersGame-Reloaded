@@ -5,6 +5,9 @@
  */
 import { CFG, type ComponentKind } from '../config.ts';
 import type { DB } from '../db-core.ts';
+import { modsOf } from './mods.ts';
+
+const mods = (db: DB, id: number) => modsOf(db.prepare('SELECT skill_mods FROM players WHERE id = ?').get(id) as { skill_mods: string });
 
 export type BloodSource = 'hunt' | 'work' | 'raid' | 'dungeon';
 
@@ -17,14 +20,14 @@ export function installedParts(db: DB, playerId: number): Partial<Record<Compone
 export const upgradeCount = (db: DB, playerId: number) => Object.values(installedParts(db, playerId)).reduce((a, b) => a + (b ?? 0), 0);
 
 /** How much blood the shrine can hold (Blood Chalice adds to it). */
-export const tankSize = (db: DB, playerId: number) => CFG.shrineTank + CFG.shrineTankPerTier * (installedParts(db, playerId).chalice ?? 0);
+export const tankSize = (db: DB, playerId: number) => CFG.shrineTank + CFG.shrineTankPerTier * (installedParts(db, playerId).chalice ?? 0) + (mods(db, playerId).shrineTank ?? 0);
 /** How many steps a routine may have (Bone Altar adds to it). */
 export const routineSlots = (db: DB, playerId: number) => CFG.shrineSlots + CFG.shrineSlotsPerTier * (installedParts(db, playerId).altar ?? 0);
 
 export function gatherBlood(db: DB, playerId: number, source: BloodSource, units = 1) {
   const per = { hunt: CFG.bloodPerHuntPortion, work: CFG.bloodPerWorkHour, raid: CFG.bloodPerRaid, dungeon: CFG.bloodPerDungeonFight }[source];
   const bonus = (installedParts(db, playerId).idol ?? 0) >= 2 ? 1 + CFG.shrineBloodBonus : 1; // Idol of the Hunt II
-  const amount = per * units * bonus;
+  const amount = per * units * bonus * (1 + (mods(db, playerId).bloodGather ?? 0)); // Idol II and the skill board
   if (!(amount > 0)) return;
   db.prepare('UPDATE players SET blood = MIN(?, blood + ?) WHERE id = ?').run(tankSize(db, playerId), amount, playerId);
 }

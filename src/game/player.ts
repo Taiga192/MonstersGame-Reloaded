@@ -2,6 +2,7 @@ import { ANCESTRAL, CFG, HOUR, ITEM_BY_KEY, MAIN_STATS, SENTINEL_BY_KEY, type It
 import type { DB } from '../db-core.ts';
 import { assert, GameError } from '../errors.ts';
 import { accomplishmentBonus } from './accomplishments.ts';
+import { modsOf } from './mods.ts';
 
 export interface Player {
   id: number; name: string; pass_hash: string; race: Race; level: number; xp: number; gold: number;
@@ -16,7 +17,7 @@ export interface Player {
   ancestral_at: number; ancestral_wins: number; potion_stat_until: number; vitality_hp: number;
   referrer_id: number | null; referral_paid: number;
   clan_id: number | null; clan_role: string | null;
-  wins: number; losses: number; is_bot: number; is_admin: number; blood: number; created_at: number;
+  wins: number; losses: number; is_bot: number; is_admin: number; blood: number; skill_mods: string; skill_start: string | null; created_at: number;
 }
 
 export type Stats = Record<Stat, number>;
@@ -25,13 +26,16 @@ export type Stats = Record<Stat, number>;
 export function loadPlayer(db: DB, id: number, now: number): Player {
   const p = db.prepare('SELECT * FROM players WHERE id = ?').get(id) as Player | undefined;
   if (!p) throw new GameError('not_found', 'Player not found', 404);
-  const hp = Math.min(p.max_hp, p.hp + (CFG.hpRegenPerHour * (now - p.hp_at)) / HOUR);
+  const hp = Math.min(p.max_hp, p.hp + (Math.max(0, CFG.hpRegenPerHour * (1 + (modsOf(p).hpRegen ?? 0))) * (now - p.hp_at)) / HOUR);
   if (Math.abs(hp - p.hp) > 1e-9 || p.hp_at !== now) {
     db.prepare('UPDATE players SET hp = ?, hp_at = ? WHERE id = ?').run(hp, now, id);
     p.hp = hp; p.hp_at = now;
   }
   return p;
 }
+
+/** The raid cooldown of this character in ms (the skill board can shorten it). */
+export const attackCooldownOf = (p: { skill_mods: string }) => Math.round(CFG.attackCooldown * (1 - (modsOf(p).raidCooldown ?? 0)));
 
 export function setHp(db: DB, id: number, hp: number, now: number, maxHp?: number) {
   db.prepare('UPDATE players SET hp = ?, hp_at = ?, max_hp = COALESCE(?, max_hp) WHERE id = ?').run(hp, now, maxHp ?? null, id);
@@ -143,6 +147,10 @@ export function battleStats(db: DB, p: Player, opts: { ancestral: boolean; equip
   }
   if (opts.sentinels !== false) { const s = sentinelBonus(db, p.id); st.str += s.atk; st.def += s.def; st.sta += s.sta; }
   if (opts.ancestral) { const a = ancestralBonus(db, p); for (const s of MAIN_STATS) st[s] += a[s]; }
+  if (opts.equipment !== false) { // the skill board: flat bonuses first, then the percentages (own stat + all attributes)
+    const m = modsOf(p);
+    for (const s of MAIN_STATS) st[s] = Math.max(1, Math.round((st[s] + (m[s] ?? 0)) * (1 + (m[`${s}Pct` as 'strPct'] ?? 0) + (m.allPct ?? 0))));
+  }
   if (opts.potion !== false && p.potion_stat_until > p.hp_at) for (const s of MAIN_STATS) st[s] = Math.round(st[s] * 1.1);
   return st;
 }
@@ -153,7 +161,7 @@ export interface XpResult { levelsGained: number; goldBonus: number; referralPai
 export function awardXp(db: DB, id: number, xp: number, now: number): XpResult {
   const p = loadPlayer(db, id, now);
   let { level, xp: cur, max_hp: maxHp, gold, hp } = p;
-  const xpGained = xp > 0 ? Math.max(1, Math.round(xp * CFG.rateXp)) : 0; // the world's XP rate (admin page) applies to every source
+  const xpGained = xp > 0 ? Math.max(1, Math.round(xp * CFG.rateXp * (1 + (modsOf(p).xp ?? 0)))) : 0; // the world's XP rate (admin page) applies to every source
   cur += xpGained;
   let levelsGained = 0, goldBonus = 0;
   while (cur >= CFG.xpToNext(level)) {

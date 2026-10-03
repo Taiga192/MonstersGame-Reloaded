@@ -1,6 +1,7 @@
 import { CFG, DAY_MS, ITEM_BY_KEY } from '../config.ts';
 import type { DB } from '../db-core.ts';
 import { assert } from '../errors.ts';
+import { modsOf } from './mods.ts';
 import { systemMail } from './mail.ts';
 import { assertFree, loadPlayer, vitalityRoom } from './player.ts';
 
@@ -50,7 +51,8 @@ export function buyListing(db: DB, playerId: number, listingId: number, now: num
   assert(p.level >= item.minLevel, 'level_too_low', `Requires level ${item.minLevel}`);
   assert(p.gold >= l.price, 'no_gold', `Need ${l.price} gold`);
   assert(item.potion !== 'maxhp' || vitalityRoom(db, p) > 0, 'vitality_cap', `You cannot use any more Vitality Potions (maximum +${CFG.vitalityCap} max HP in total)`);
-  const fee = Math.floor(l.price * CFG.templeFee), proceeds = l.price - fee;
+  const seller = db.prepare('SELECT skill_mods FROM players WHERE id = ?').get(l.seller_id) as { skill_mods: string };
+  const fee = Math.floor(l.price * CFG.templeFee * (1 - (modsOf(seller).templeFeeCut ?? 0))), proceeds = l.price - fee; // (the seller's skill board can lower the fee)
   db.prepare('UPDATE players SET gold = gold - ? WHERE id = ?').run(l.price, playerId);
   db.prepare('UPDATE players SET gold = gold + ? WHERE id = ?').run(proceeds, l.seller_id);
   db.prepare('INSERT INTO inventory (player_id, item_key, bought_at, hardening) VALUES (?,?,?,?)').run(playerId, l.item_key, now, l.hardening);

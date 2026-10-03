@@ -99,6 +99,17 @@ GitHub Pages can only host static files, so there is no server and no database s
 - [x] Automatic bots (personas, clans, wars, arena, market, dungeon; they start from zero)
 - [ ] Balance pass against real-game data
 
+## The skill board (a new mechanic)
+Every level gives **1 skill point** (a node costs 1-3 points, see below), spent on a board of **308 nodes** (Skills in the menu; pan with the mouse, zoom with the wheel).
+- **Seven regions**, each with its own start node (your **class**), three arms of ten nodes and a keystone at the tip: **Hunter** (hunting gold/XP, fewer failed hunts), **Warrior** (strength, raid plunder, health), **Shadow** (agility, short raid cooldown), **Delver** (dungeon XP, loot, health), **Warden** (defence, health, regeneration, keeping your gold), **Artisan** (wages, cheaper shop and training, better selling), **Acolyte** (shrine: more blood, less fuel).
+- The **first point has to go on a start node**. After that you can only take nodes that touch one you already have; hubs in the middle and **three arcs between every two neighbouring regions** (inner, middle and outer ring, filled with plain attribute nodes and a notable in the middle) let a build cross over into other regions instead of walking straight out.
+- **Costs:** start nodes and small nodes cost **1 point**, **notables (the middle nodes) 2**, **keystones 3**. The whole board costs about 400 points, so even at level 100 a character can afford only a quarter of it: builds are real choices.
+- **Double-click** a node to learn it; hovering shows what it does, what it costs and whether you can take it.
+- **Small nodes** are +1-2 %, **notables** are the big upgrades (+4-8 %), the **keystone** of a region is a huge bonus **with a drawback** (for example Lone Wolf: +15 % hunting gold and XP, but you lose 20 % more gold when raided).
+- The shrine is in the main menu (Shrine), not in the Town.
+- Effects cover attributes (flat and %), health and regeneration, hunting, wages, raids, the dungeon, XP and gold, shop/selling/training/hardening prices, the Blood Temple fee, the Ancestral Site and the shrine.
+- Taking **one node back** costs 10 gold per level (only at the end of a branch, the rest has to stay connected); **resetting the board** costs 50 gold per level and returns every point. Points per level and both prices are on the admin page.
+
 ## The shrine (idle PvE, a new mechanic)
 For players who cannot be online all day: the shrine hunts, works and delves for you while you are away, **always clearly weaker than playing by hand** (60 % of the pay, 75 % at best) and with **nothing that can be bought with real money**.
 - **Unlocked at level 10** (Town -> Shrine, 1,500 gold from the NPC shop). It runs a **routine** of up to 3 steps (more with a Bone Altar): "hunt 6 portions", "work 4 hours", and, with an Idol of the Hunt, "dungeon run (up to 30 fights)".

@@ -7,6 +7,10 @@ import type { Rng } from './rng.ts';
 import * as auth from './game/auth.ts';
 import * as admin from './game/admin.ts';
 import * as shrine from './game/shrine.ts';
+import * as skills from './game/skills.ts';
+import { maxHpBonus, pointsTotal } from './game/skills.ts';
+import { boardForClient } from './skills.ts';
+import { discounted, modsOf } from './game/mods.ts';
 import { tankSize } from './game/blood.ts';
 import { applyPreset, applySettings, describeSettings, PRESETS, resetAllSettings, resetSetting, setSetting } from './settings.ts';
 import { LoginGuard } from './game/lockout.ts';
@@ -22,7 +26,7 @@ import * as temple from './game/temple.ts';
 import * as war from './game/war.ts';
 import * as eco from './game/economy.ts';
 import * as raid from './game/raid.ts';
-import { assertFree, battleStats, equipmentLoadout, vitalityRoom, hideoutTotal, loadPlayer, ownedItems, sentinelBonus } from './game/player.ts';
+import { attackCooldownOf, assertFree, battleStats, equipmentLoadout, vitalityRoom, hideoutTotal, loadPlayer, ownedItems, sentinelBonus } from './game/player.ts';
 
 export interface Deps {
   db: DB; now: () => number; rng: Rng; devClock?: { offset: number };
@@ -119,13 +123,14 @@ export function createApi({ db, now, rng, devClock, assets, middleware = [], glo
       const { pass_hash: _, ...pub } = p;
       return {
         ...pub, blood: Math.floor(p.blood * 10) / 10, bloodMax: tankSize(db, id), shrine: (db.prepare('SELECT status FROM shrine WHERE player_id = ?').get(id) as { status: string } | undefined)?.status ?? null,
+        skillMods: modsOf(p), skillPoints: Math.max(0, pointsTotal(p.level) - skills.usedPoints(db, id)),
         isAdmin: admin.isAdmin(db, id, singlePlayer), hp: Math.floor(p.hp), serverNow: t, xpToNext: CFG.xpToNext(p.level),
-        attackReadyAt: p.last_attack_at + CFG.attackCooldown,
+        attackReadyAt: p.last_attack_at + attackCooldownOf(p),
         found: p.found_target && t - p.found_at <= CFG.searchValidity
           ? db.prepare('SELECT id, name, level, race FROM players WHERE id = ?').get(p.found_target) : null,
         huntMinutesLeft: (CFG.huntBudget - (p.hunt_day === Math.floor(t / 86_400_000) ? p.hunt_used : 0)) / 60000,
         vitalityRoom: vitalityRoom(db, p), unreadMail: mail.unreadCount(db, id), arenaTitles: db.prepare('SELECT season, place FROM arena_titles WHERE player_id = ? ORDER BY season DESC').all(id),
-        ancestralReadyAt: p.ancestral_at + CFG.ancestralCooldown, ancestralFee: CFG.ancestralFee(p.ancestral_wins),
+        ancestralReadyAt: p.ancestral_at + CFG.ancestralCooldown, ancestralFee: discounted(CFG.ancestralFee(p.ancestral_wins), p, 'ancestralFee'),
         ancestralSlots: CFG.ancestralSlots(p.level),
         sentinelOwned: db.prepare('SELECT * FROM sentinels WHERE player_id = ?').get(id) ?? null,
         clan: p.clan_id ? db.prepare('SELECT id, name, domicile_level, treasury, leader_id FROM clans WHERE id = ?').get(p.clan_id) : null,
@@ -137,7 +142,7 @@ export function createApi({ db, now, rng, devClock, assets, middleware = [], glo
         inventory: ownedItems(db, id).map((o) => ({ id: o.id, key: o.def.key, name: o.def.name, slot: o.def.slot, hardening: o.hardening, equipped: equipmentLoadout(db, p).equipped.includes(o.id) })),
         hideout: db.prepare('SELECT surroundings, path, wall, building FROM hideouts WHERE player_id = ?').get(id), hideoutTotal: hideoutTotal(db, id),
         ancestralSkills: db.prepare('SELECT skill_key, level FROM ancestral_skills WHERE player_id = ?').all(id),
-        nextTrainCosts: Object.fromEntries((['str', 'def', 'agi', 'sta', 'dex'] as Stat[]).map((s) => [s, CFG.trainCost(p[s])])),
+        nextTrainCosts: Object.fromEntries((['str', 'def', 'agi', 'sta', 'dex'] as Stat[]).map((s) => [s, discounted(CFG.trainCost(p[s]), p, 'trainDiscount')])),
       };
     }));
   });
@@ -171,6 +176,13 @@ export function createApi({ db, now, rng, devClock, assets, middleware = [], glo
   app.post('/api/work/collect', act((id) => eco.collectWork(db, id, now())));
   app.post('/api/work/cancel', act((id) => eco.cancelWork(db, id, now())));
   app.post('/api/ancestral/challenge', act((id) => eco.ancestralChallenge(db, id, now(), rng)));
+
+  // ---- skill board: passive bonuses, 1 point per level ----
+  app.get('/api/skills/board', (c) => c.json(boardForClient())); // the same for everybody
+  app.get('/api/skills', (c) => { const id = me(c); return c.json(tx(db, () => skills.skillState(db, id, now()))); });
+  app.post('/api/skills/allocate', act((id, b) => { skills.allocate(db, id, b.node, now()); return skills.skillState(db, id, now()); }));
+  app.post('/api/skills/refund', act((id, b) => { skills.refund(db, id, b.node, now()); return skills.skillState(db, id, now()); }));
+  app.post('/api/skills/respec', act((id) => { skills.respec(db, id, now()); return skills.skillState(db, id, now()); }));
 
   // ---- shrine: automation of hunting and work ----
   app.get('/api/shrine', (c) => { const id = me(c); return c.json(tx(db, () => { shrine.settle(db, id, now(), rng); return shrine.shrineState(db, id, now()); })); });
@@ -208,7 +220,7 @@ export function createApi({ db, now, rng, devClock, assets, middleware = [], glo
       const names = Object.fromEntries((db.prepare('SELECT id, name FROM clans WHERE id IN (?, ?)').all(ctx.myClan, ctx.enemyClan) as { id: number; name: string }[]).map((x) => [x.id, x.name]));
       const p = loadPlayer(db, id, t);
       return { war: ctx.war, myClan: { id: ctx.myClan, name: names[ctx.myClan] }, enemyClan: { id: ctx.enemyClan, name: names[ctx.enemyClan] }, targets, scoreboard: war.warScoreboard(db, ctx.war.id),
-        attackReadyAt: p.last_attack_at + CFG.attackCooldown, skillBand: CFG.warSkillBand, maxHits: CFG.sameOpponentMaxWar };
+        attackReadyAt: p.last_attack_at + attackCooldownOf(p), skillBand: CFG.warSkillBand, maxHits: CFG.sameOpponentMaxWar };
     }));
   });
   app.post('/api/clan/war/attack', act((id) => war.warAttack(db, id, now(), rng)));
@@ -331,7 +343,7 @@ export function createApi({ db, now, rng, devClock, assets, middleware = [], glo
     dev('level', (id, b) => {
       const lv = Math.max(1, Math.min(200, Number(b.level) || 1));
       db.prepare('UPDATE players SET level = ?, xp = 0, max_hp = ?, hp = ?, hp_at = ? WHERE id = ?')
-        .run(lv, CFG.startMaxHp + (lv - 1) * CFG.levelUpMaxHp, CFG.startMaxHp + (lv - 1) * CFG.levelUpMaxHp, now(), id);
+        .run(lv, CFG.startMaxHp + (lv - 1) * CFG.levelUpMaxHp + maxHpBonus(db, id), CFG.startMaxHp + (lv - 1) * CFG.levelUpMaxHp + maxHpBonus(db, id), now(), id);
     });
     dev('blood', (id) => { db.prepare('UPDATE players SET blood = ? WHERE id = ?').run(tankSize(db, id), id); });
     dev('heal', (id) => { db.prepare('UPDATE players SET hp = max_hp, hp_at = ? WHERE id = ?').run(now(), id); });

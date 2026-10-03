@@ -283,3 +283,29 @@ test('the server never fast-forwards or replays bot history', async () => {
   assert.equal(/fastForward|warmUp|WARMUP/i.test(server), false, 'src/server.ts must not simulate history for bots');
   assert.match(server, /ensureBots\(/, 'but it does create the bots');
 });
+
+test('bots spend their skill points along a plan: a class from their favourite region, one connected build, keystones only where it suits', async () => {
+  const { isConnected, NODE_BY_ID, REGIONS: regions } = await import('../src/skills.ts');
+  const { pointsFor } = await import('../src/game/skills.ts');
+  const db = openDb(), rng = seeded(61);
+  ensureBots(db, 60, T0, rng);
+  fastForward(db, 25, T0, rng);
+  const bots = db.prepare('SELECT b.persona, p.id, p.level, p.skill_start FROM bots b JOIN players p ON p.id = b.player_id').all() as { persona: string; id: number; level: number; skill_start: string | null }[];
+  const stats = new Map<string, { n: number; regions: Map<string, number> }>();
+  let withBoard = 0;
+  for (const b of bots) {
+    const nodes = (db.prepare('SELECT node_id FROM skills WHERE player_id = ?').all(b.id) as { node_id: string }[]).map((r) => r.node_id);
+    const spent = pointsFor(nodes);
+    assert.ok(spent <= b.level, `${b.persona}: ${spent} points spent at level ${b.level}`);
+    if (!nodes.length) continue;
+    withBoard++;
+    assert.ok(isConnected(new Set(nodes), b.skill_start ?? undefined), 'the build is one connected piece');
+    assert.equal(NODE_BY_ID.get(b.skill_start!)!.kind, 'origin', 'the class is a start node');
+    assert.ok(spent >= b.level - 3, `a bot spends its points (a notable or keystone may wait for more): ${spent} of ${b.level}`);
+    const s = stats.get(b.persona) ?? { n: 0, regions: new Map() }; stats.set(b.persona, s); s.n++;
+    for (const id of nodes) { const r = NODE_BY_ID.get(id)!.region; s.regions.set(r, (s.regions.get(r) ?? 0) + 1); if (NODE_BY_ID.get(id)!.kind === 'keystone') assert.equal(b.persona, 'hunter', 'only the hunter persona takes a keystone'); }
+  }
+  assert.ok(withBoard >= 50, `most bots have a board: ${withBoard}`);
+  const favourite = (persona: string) => [...(stats.get(persona)?.regions ?? [])].filter(([r]) => regions.some((x) => x.key === r)).sort((a, z) => z[1] - a[1])[0]?.[0];
+  assert.equal(favourite('brawler'), 'warrior'); assert.equal(favourite('hunter'), 'hunter'); assert.equal(favourite('worker'), 'artisan'); assert.equal(favourite('leader'), 'warden'); assert.equal(favourite('casual'), 'acolyte');
+});

@@ -71,6 +71,9 @@ Removed in this replica by design (no premium accounts, no crystals).
 ## World settings (admin page, not in the original game)
 Every rate and cooldown is a runtime setting (`src/settings.ts`). The XP multiplier applies to all XP, the gold multiplier to hunting, graveyard wages, the relic dealer and victim-link bites (never to gold taken from other players). Wipes reset characters to the start values and delete all other game data.
 
+## Skill board
+NEW, not in the original game. `src/skills.ts` generates the board (7 regions x (start node + 3 arms of 10 + keystone), 7 hubs, and 21 arcs of plain attribute nodes with a notable in the middle joining neighbouring regions) from a few tables; `src/game/skills.ts` handles spending. Every node is a set of modifiers; their sum is stored on the player row (`players.skill_mods`) and read by the rules through `modsOf()`. Maximum health from nodes is stored in `max_hp` (like level-ups). Caps keep chances sane (see `MODS` in `src/skills.ts`).
+
 ## Equipment and balance
 Gear, prices, pacing targets and the measurements behind them are in [BALANCE.md](BALANCE.md).
 

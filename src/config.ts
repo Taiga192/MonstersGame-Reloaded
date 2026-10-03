@@ -145,6 +145,13 @@ export const CFG = {
   bloodPerDungeonFight: 1,
   shrineRaidLossCap: 0.03, // a raid takes at most this share of the gold of a player whose shrine is running (there is no protection while automated)
 
+  // ---- skill board (an addition that is not in the original game), see src/skills.ts ----
+  skillPointsPerLevel: 1,
+  skillCostNotable: 2, // points a notable costs (start nodes, small nodes, hubs and arc nodes cost 1)
+  skillCostKeystone: 3, // points a keystone costs: nobody can take half of the board
+  skillRefundCostPerLevel: 10, // gold per level of the character for taking back ONE node (it has to be a node at the end of a branch)
+  skillRespecCostPerLevel: 50, // gold per level for resetting the whole board (cheaper than refunding many nodes one by one)
+
   clanMinLevel: 3,
   clanBaseSlots: 10, // [ASSUMED]
   clanSlotsPerLevel: 5,

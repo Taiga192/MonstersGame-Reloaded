@@ -6,6 +6,8 @@ import { CFG, ITEM_BY_KEY } from '../config.ts';
 import type { DB } from '../db-core.ts';
 import { assert, GameError } from '../errors.ts';
 import { systemMail } from './mail.ts';
+import { modsOf } from './mods.ts';
+import { reconcile as reconcileSkills } from './skills.ts';
 import type { Player } from './player.ts';
 
 /** Single player: the one human is always an admin. Multiplayer: the flag in the database (set by hand, see scripts/admin.ts). */
@@ -87,8 +89,9 @@ export function setPlayerField(db: DB, adminId: number, playerId: unknown, field
     assert(!(p.id === adminId && n === 0), 'self_demote', 'You cannot remove your own admin flag (you would lock yourself out)');
   }
   if (f === 'level') { // a new level also sets max health the way levelling would have, and heals
-    const maxHp = CFG.startMaxHp + (n - 1) * CFG.levelUpMaxHp + p.vitality_hp;
+    const maxHp = CFG.startMaxHp + (n - 1) * CFG.levelUpMaxHp + p.vitality_hp + (modsOf(p).maxHp ?? 0);
     db.prepare('UPDATE players SET level = ?, xp = 0, max_hp = ?, hp = ?, hp_at = ? WHERE id = ?').run(n, maxHp, maxHp, now, p.id);
+    reconcileSkills(db, p.id, now); // fewer points than nodes now: the board is reset (free)
   } else if (f === 'max_hp') db.prepare('UPDATE players SET max_hp = ?, hp = MIN(hp, ?), hp_at = ? WHERE id = ?').run(n, n, now, p.id);
   else if (f === 'hp') db.prepare('UPDATE players SET hp = MIN(?, max_hp), hp_at = ? WHERE id = ?').run(n, now, p.id);
   else db.prepare(`UPDATE players SET ${f} = ? WHERE id = ?`).run(n, p.id); // (f is one of the keys above, never user text)
@@ -124,7 +127,7 @@ export function announce(db: DB, adminId: number, subject: unknown, body: unknow
 /** Tables that describe a player's own data (deleted with the player). */
 const OWN_TABLES: [string, string][] = [
   ['sessions', 'player_id'], ['inventory', 'player_id'], ['sentinels', 'player_id'], ['hideouts', 'player_id'], ['ancestral_skills', 'player_id'],
-  ['bots', 'player_id'], ['shrine_components', 'player_id'], ['shrine', 'player_id'], ['dungeon', 'player_id'], ['dungeon_loot', 'player_id'], ['dungeon_weekly', 'player_id'], ['counters', 'player_id'],
+  ['bots', 'player_id'], ['skills', 'player_id'], ['shrine_components', 'player_id'], ['shrine', 'player_id'], ['dungeon', 'player_id'], ['dungeon_loot', 'player_id'], ['dungeon_weekly', 'player_id'], ['counters', 'player_id'],
   ['acc_sets', 'player_id'], ['arena_points', 'player_id'], ['clan_perms', 'player_id'], ['clan_applications', 'player_id'],
   ['clan_war_members', 'player_id'], ['bites', 'link_player'], ['mail', 'to_id'], ['temple_listings', 'seller_id'],
 ];
@@ -162,7 +165,7 @@ export function wipeWorld(db: DB, adminId: number, mode: unknown, now: number) {
     `UPDATE players SET level = 1, xp = 0, gold = ?, hp = ?, hp_at = ?, max_hp = ?, str = ?, def = ?, agi = ?, sta = ?, dex = ?,
        last_attack_at = 0, found_target = NULL, found_at = 0, hunt_day = 0, hunt_used = 0, hunt_started = NULL, hunt_until = NULL, hunt_portions = NULL,
        dungeon_until = NULL, work_started = NULL, work_until = NULL, work_hours = NULL, ancestral_at = 0, ancestral_wins = 0,
-       potion_stat_until = 0, vitality_hp = 0, referral_paid = 0, wins = 0, losses = 0, blood = 0`,
+       potion_stat_until = 0, vitality_hp = 0, referral_paid = 0, wins = 0, losses = 0, blood = 0, skill_mods = '{}', skill_start = NULL`,
   ).run(CFG.startGold, CFG.startMaxHp, now, CFG.startMaxHp, s, s, s, s, s);
   for (const { id } of db.prepare('SELECT id FROM players').all() as { id: number }[]) db.prepare('INSERT INTO hideouts (player_id) VALUES (?)').run(id);
   const wipes = Number((db.prepare("SELECT value FROM meta WHERE key = 'wipes'").get() as { value: string } | undefined)?.value ?? 0) + 1;

@@ -155,6 +155,7 @@ CREATE TABLE IF NOT EXISTS shrine (
   player_id INTEGER PRIMARY KEY REFERENCES players(id), level INTEGER NOT NULL DEFAULT 1, status TEXT NOT NULL DEFAULT 'off', -- off | running | paused | starved
   routine TEXT NOT NULL DEFAULT '[]', step INTEGER NOT NULL DEFAULT 0, step_at INTEGER NOT NULL DEFAULT 0, bought_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS skills (player_id INTEGER NOT NULL REFERENCES players(id), node_id TEXT NOT NULL, PRIMARY KEY (player_id, node_id));
 CREATE TABLE IF NOT EXISTS shrine_components (player_id INTEGER NOT NULL REFERENCES players(id), kind TEXT NOT NULL, tier INTEGER NOT NULL, PRIMARY KEY (player_id, kind));
 -- admin page: tuned numbers (only the ones that differ from config.ts), world facts, and an audit trail of what admins did
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value REAL NOT NULL);
@@ -208,6 +209,7 @@ function migrate(db: DB) {
   add('players', 'is_bot', 'INTEGER NOT NULL DEFAULT 0');
   add('dungeon', 'ready_at', 'INTEGER NOT NULL DEFAULT 0'); add('dungeon', 'checkpoint', 'INTEGER NOT NULL DEFAULT 1');
   add('players', 'blood', 'REAL NOT NULL DEFAULT 0');
+  add('players', 'skill_mods', "TEXT NOT NULL DEFAULT '{}'"); add('players', 'skill_start', 'TEXT'); // summed skill board modifiers and the start node (the class)
   add('players', 'is_admin', 'INTEGER NOT NULL DEFAULT 0'); // multiplayer: set by hand (scripts/admin.ts); single player: everyone is admin anyway
   db.exec('DELETE FROM sessions WHERE length(token) != 64'); // sessions used to store the token itself (48 hex); now only its SHA-256 (64 hex)
 }

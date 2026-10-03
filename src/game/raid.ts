@@ -7,13 +7,14 @@ import { resumeIfCeasefire, warBetween } from './clan.ts';
 import { bump } from './counters.ts';
 import { simulate } from './combat.ts';
 import { gatherBlood, isAutomated } from './blood.ts';
-import { assertFree, awardXp, isBusy, battleStats, equipmentLoadout, hideoutTotal, loadPlayer, setHp, type Player } from './player.ts';
+import { modsOf } from './mods.ts';
+import { attackCooldownOf, assertFree, awardXp, isBusy, battleStats, equipmentLoadout, hideoutTotal, loadPlayer, setHp, type Player } from './player.ts';
 
 
 export function assertCanAttack(p: Player, now: number) {
   assertFree(p, now);
   assert(p.hp >= CFG.hpProtectThreshold, 'too_weak', `You need at least ${CFG.hpProtectThreshold} HP to raid`);
-  const wait = p.last_attack_at + CFG.attackCooldown - now;
+  const wait = p.last_attack_at + attackCooldownOf(p) - now;
   assert(wait <= 0, 'cooldown', `You can attack again in ${Math.ceil(wait / 60000)} min`);
 }
 
@@ -98,7 +99,8 @@ export function fight(db: DB, a: Player, d: Player, now: number, rng: Rng): Raid
   if (attackerWon) {
     let share = randRange(rng, CFG.stealMin, CFG.stealMax);
     if (isAutomated(db, d.id)) share = Math.min(share, CFG.shrineRaidLossCap); // no protection while the shrine runs, but a reasonable limit
-    gold = Math.floor(d.gold * share * (1 + equipmentLoadout(db, a).goldBonus + accomplishmentBonus(db, a.id).raidGold));
+    share *= 1 - (modsOf(d).raidShield ?? 0); // the defender's skill board
+    gold = Math.floor(d.gold * share * (1 + equipmentLoadout(db, a).goldBonus + accomplishmentBonus(db, a.id).raidGold + (modsOf(a).raidGold ?? 0)));
     gold = Math.min(gold, d.gold);
     db.prepare('UPDATE players SET gold = gold - ? WHERE id = ?').run(gold, d.id);
     db.prepare('UPDATE players SET gold = gold + ? WHERE id = ?').run(gold, a.id);
