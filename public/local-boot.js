@@ -7,36 +7,80 @@ if (window.MG_LOCAL) {
   const view = () => document.getElementById('view');
   const fatal = (title, text) => {
     const card = `<div class="card center" style="max-width:640px"><h2>${title}</h2><p>${text}</p></div>`;
-    if (view()) view().innerHTML = card; else addEventListener('DOMContentLoaded', () => { view().innerHTML = card; });
+    if (view()) view().innerHTML = card;
+    else
+      addEventListener('DOMContentLoaded', () => {
+        view().innerHTML = card;
+      });
   };
 
   const settingsKey = 'mg_settings';
   const defaults = { bots: 100, botsRaidHumans: true, humanRaidChance: 0.3 };
-  const loadSettings = () => { try { return { ...defaults, ...JSON.parse(localStorage.getItem(settingsKey) || '{}') }; } catch { return { ...defaults }; } };
-  const saveSettings = (s) => { try { localStorage.setItem(settingsKey, JSON.stringify(s)); } catch { /* private mode */ } };
+  const loadSettings = () => {
+    try {
+      return { ...defaults, ...JSON.parse(localStorage.getItem(settingsKey) || '{}') };
+    } catch {
+      return { ...defaults };
+    }
+  };
+  const saveSettings = (s) => {
+    try {
+      localStorage.setItem(settingsKey, JSON.stringify(s));
+    } catch {
+      /* private mode */
+    }
+  };
 
-  let worker, seq = 0;
+  let worker,
+    seq = 0;
   const pending = new Map();
-  const rpc = (msg, transfer = []) => new Promise((resolve, reject) => {
-    const id = ++seq; pending.set(id, { resolve, reject });
-    worker.postMessage({ id, ...msg }, transfer);
-  });
+  const rpc = (msg, transfer = []) =>
+    new Promise((resolve, reject) => {
+      const id = ++seq;
+      pending.set(id, { resolve, reject });
+      worker.postMessage({ id, ...msg }, transfer);
+    });
 
   const info = { storage: 'memory', storageNote: '', sqlite: '' };
 
   // One game per browser at a time: the database file can only be open once (a second tab would corrupt nothing but fail).
-  const acquireLock = () => new Promise((resolve) => {
-    if (!navigator.locks) return resolve(true);
-    navigator.locks.request('monstersgame-save', { ifAvailable: true }, (lock) => { resolve(!!lock); if (lock) return new Promise(() => {}); }); // held until the tab closes
-  });
+  const acquireLock = () =>
+    new Promise((resolve) => {
+      if (!navigator.locks) return resolve(true);
+      navigator.locks.request('monstersgame-save', { ifAvailable: true }, (lock) => {
+        resolve(!!lock);
+        if (lock) return new Promise(() => {});
+      }); // held until the tab closes
+    });
 
   const ready = (async () => {
-    if (!window.Worker || !window.WebAssembly) throw Object.assign(new Error('This browser cannot run the game (Web Workers or WebAssembly are missing). Please use a current Chrome, Firefox, Edge or Safari.'), { fatal: 'Unsupported browser' });
-    if (!(await acquireLock())) throw Object.assign(new Error('MonstersGame-Reloaded is already open in another tab or window. The saved game can only be used by one tab at a time. Close the other one and reload this page.'), { fatal: 'Already open' });
-    const assets = await realFetch('assets.json').then((r) => (r.ok ? r.json() : {}), () => ({}));
+    if (!window.Worker || !window.WebAssembly)
+      throw Object.assign(
+        new Error('This browser cannot run the game (Web Workers or WebAssembly are missing). Please use a current Chrome, Firefox, Edge or Safari.'),
+        { fatal: 'Unsupported browser' },
+      );
+    if (!(await acquireLock()))
+      throw Object.assign(
+        new Error(
+          'MonstersGame-Reloaded is already open in another tab or window. The saved game can only be used by one tab at a time. Close the other one and reload this page.',
+        ),
+        { fatal: 'Already open' },
+      );
+    const assets = await realFetch('assets.json').then(
+      (r) => (r.ok ? r.json() : {}),
+      () => ({}),
+    );
     worker = new Worker(new URL('engine.worker.js', location.href), { type: 'module' });
-    worker.onmessage = (ev) => { const p = pending.get(ev.data.id); if (!p) return; pending.delete(ev.data.id); ev.data.ok ? p.resolve(ev.data) : p.reject(Object.assign(new Error(ev.data.error), { code: ev.data.code })); };
-    worker.onerror = (e) => { for (const p of pending.values()) p.reject(new Error(e.message || 'The game engine crashed')); pending.clear(); };
+    worker.onmessage = (ev) => {
+      const p = pending.get(ev.data.id);
+      if (!p) return;
+      pending.delete(ev.data.id);
+      ev.data.ok ? p.resolve(ev.data) : p.reject(Object.assign(new Error(ev.data.error), { code: ev.data.code }));
+    };
+    worker.onerror = (e) => {
+      for (const p of pending.values()) p.reject(new Error(e.message || 'The game engine crashed'));
+      pending.clear();
+    };
     Object.assign(info, await rpc({ op: 'init', settings: loadSettings(), assets }));
     return info;
   })();
@@ -47,7 +91,13 @@ if (window.MG_LOCAL) {
     const u = new URL(typeof input === 'string' ? input : input.url, location.href);
     if (!u.pathname.startsWith(base + 'api/')) return realFetch(input, init);
     await ready;
-    const r = await rpc({ op: 'http', method: (init.method || 'GET').toUpperCase(), url: '/api/' + u.pathname.slice(base.length + 4) + u.search, headers: init.headers || {}, body: init.body });
+    const r = await rpc({
+      op: 'http',
+      method: (init.method || 'GET').toUpperCase(),
+      url: '/api/' + u.pathname.slice(base.length + 4) + u.search,
+      headers: init.headers || {},
+      body: init.body,
+    });
     return new Response(r.body, { status: r.status, headers: { 'content-type': r.contentType } });
   };
 
@@ -55,9 +105,19 @@ if (window.MG_LOCAL) {
   window.MG_LOCAL_API = {
     info: () => ({ ...info }),
     settings: () => loadSettings(),
-    async applySettings(s) { saveSettings(s); await rpc({ op: 'settings', settings: s }); },
-    async exportSave() { const r = await rpc({ op: 'export' }); return r.bytes; },
-    async importSave(bytes) { await rpc({ op: 'import', bytes }, [bytes.buffer]); },
-    async resetGame() { await rpc({ op: 'reset' }); },
+    async applySettings(s) {
+      saveSettings(s);
+      await rpc({ op: 'settings', settings: s });
+    },
+    async exportSave() {
+      const r = await rpc({ op: 'export' });
+      return r.bytes;
+    },
+    async importSave(bytes) {
+      await rpc({ op: 'import', bytes }, [bytes.buffer]);
+    },
+    async resetGame() {
+      await rpc({ op: 'reset' });
+    },
   };
 }

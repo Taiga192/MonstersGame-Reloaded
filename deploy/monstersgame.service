@@ -13,7 +13,7 @@ Group=monsters
 WorkingDirectory=/opt/monstersgame
 EnvironmentFile=/etc/monstersgame.env
 Environment=NODE_ENV=production HOST=127.0.0.1 PORT=3000 TRUST_PROXY=1 DB_PATH=/var/lib/monstersgame/monsters.db BACKUP_DIR=/var/lib/monstersgame/backups
-ExecStart=/usr/bin/node src/server.ts
+ExecStart=/usr/bin/node src/server/main.ts
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=30

@@ -9,22 +9,42 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import puppeteer from 'puppeteer-core';
 
-const API = 8291, WEB = 8292, API2 = 8293;
+const API = 8291,
+  WEB = 8292,
+  API2 = 8293;
 const FIREFOX = process.env.FIREFOX ?? '/usr/bin/firefox';
 const results: string[] = [];
-const ok = (name: string, cond: unknown, detail = '') => { results.push(`${cond ? '✔' : '✖'} ${name}${detail ? ` (${detail})` : ''}`); if (!cond) process.exitCode = 1; };
+const ok = (name: string, cond: unknown, detail = '') => {
+  results.push(`${cond ? '✔' : '✖'} ${name}${detail ? ` (${detail})` : ''}`);
+  if (!cond) process.exitCode = 1;
+};
 const tmp = mkdtempSync(join(tmpdir(), 'mg-online-'));
 const procs: ChildProcess[] = [];
 
 const startServer = async (port: number, cors: string, db = join(tmp, 'game.db')) => {
-  const p = spawn('node', ['src/server.ts'], { env: { ...process.env, NODE_ENV: 'production', PORT: String(port), DB_PATH: db, BOTS: '10', CORS_ORIGINS: cors, BACKUP_DIR: join(tmp, 'backups') }, stdio: ['ignore', 'pipe', 'ignore'] });
+  const p = spawn('node', ['src/server/main.ts'], {
+    env: { ...process.env, NODE_ENV: 'production', PORT: String(port), DB_PATH: db, BOTS: '10', CORS_ORIGINS: cors, BACKUP_DIR: join(tmp, 'backups') },
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
   procs.push(p);
-  let log = ''; p.stdout!.on('data', (d) => (log += d));
+  let log = '';
+  p.stdout!.on('data', (d) => (log += d));
   for (let i = 0; i < 100 && !/API on/.test(log); i++) await new Promise((r) => setTimeout(r, 100));
   return p;
 };
-const stop = (p: ChildProcess) => new Promise<void>((r) => { p.on('exit', () => r()); p.kill('SIGTERM'); });
-const call = async (path: string, body?: unknown, token?: string, port = API) => (await fetch(`http://localhost:${port}/api${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) })).json() as Promise<any>;
+const stop = (p: ChildProcess) =>
+  new Promise<void>((r) => {
+    p.on('exit', () => r());
+    p.kill('SIGTERM');
+  });
+const call = async (path: string, body?: unknown, token?: string, port = API) =>
+  (
+    await fetch(`http://localhost:${port}/api${path}`, {
+      method: body === undefined ? 'GET' : 'POST',
+      headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+  ).json() as Promise<any>;
 
 // frontend build pointing at the server, served by a Pages-like static server on a different port
 spawnSync('node', ['scripts/build-pages.ts', join(tmp, 'site'), '--api', `http://localhost:${API}`], { stdio: 'ignore' });
@@ -45,7 +65,9 @@ try {
   await page.goto(site, { waitUntil: 'load' });
   await page.waitForSelector('#reg', { timeout: 30000 });
   ok('frontend and game server are different origins', new URL(site).origin !== `http://localhost:${API}`);
-  await page.type('#reg [name=name]', 'Overseas'); await page.type('#reg [name=password]', 'secret12'); await page.click('#reg button');
+  await page.type('#reg [name=name]', 'Overseas');
+  await page.type('#reg [name=password]', 'secret12');
+  await page.click('#reg button');
   await waitText('Attributes');
   ok('registered through the cross-origin API (CORS + preflight work)', true);
   await page.evaluate(() => (document.querySelector('[data-do="/train"][data-body*="str"]') as HTMLElement).click());
@@ -56,18 +78,25 @@ try {
   const other = await call('/register', { name: 'Neighbour', password: 'secret12', race: 'werewolf' });
   const otherToken = (await call('/login', { name: 'Neighbour', password: 'secret12' })).token;
   await call('/mail/send', { to: 'Overseas', subject: 'Hello from another player', body: 'Are you there?' }, otherToken);
-  await page.evaluate(() => { location.hash = '#/mail'; });
+  await page.evaluate(() => {
+    location.hash = '#/mail';
+  });
   await waitText('Hello from another player');
-  ok('another player\'s message arrives (shared world)', other.id > 0);
+  ok("another player's message arrives (shared world)", other.id > 0);
   const hs = await page.evaluate(async () => (await (await fetch('http://localhost:8291/api/highscore?type=level&size=100')).json()).total);
   ok('bots + both players in one world', hs === 12, `total ${hs}`);
 
   // 3. THE point: clearing every bit of browser data does not lose the game
-  await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
+  await page.evaluate(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
   await page.reload({ waitUntil: 'load' });
   await page.waitForSelector('#login', { timeout: 30000 });
   ok('after clearing all browser data you are logged out...', true);
-  await page.type('#login [name=name]', 'Overseas'); await page.type('#login [name=password]', 'secret12'); await page.click('#login button');
+  await page.type('#login [name=name]', 'Overseas');
+  await page.type('#login [name=password]', 'secret12');
+  await page.click('#login button');
   await waitText('Attributes');
   ok('...but logging in again brings the character back (Strength 6)', /Strength\s*6/.test(await text()));
 
@@ -90,7 +119,14 @@ try {
 
   // 6. a site that is NOT on the CORS list is blocked by the browser
   const strict = await startServer(API2, 'https://somewhere-else.example', join(tmp, 'other.db'));
-  const verdict = await page.evaluate(async (port) => { try { await fetch(`http://localhost:${port}/api/catalog`); return 'reachable'; } catch { return 'blocked'; } }, API2);
+  const verdict = await page.evaluate(async (port) => {
+    try {
+      await fetch(`http://localhost:${port}/api/catalog`);
+      return 'reachable';
+    } catch {
+      return 'blocked';
+    }
+  }, API2);
   ok('a server that does not list this site is unreachable from it (CORS)', verdict === 'blocked', verdict);
   await stop(strict);
 } catch (e) {

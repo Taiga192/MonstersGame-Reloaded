@@ -1,8 +1,8 @@
 // Balance / behaviour simulation: node scripts/simulate.ts [bots=100] [days=14] [seed=1]
 // Runs the bot population in virtual time on an in-memory database and prints a report.
-import { openDb } from '../src/db.ts';
+import { openDb } from '../src/db/node.ts';
 import { botReport, ensureBots, fastForward } from '../src/bots/runner.ts';
-import { seeded } from '../src/rng.ts';
+import { seeded } from '../src/core/rng.ts';
 
 const [bots, days, seed] = [Number(process.argv[2] ?? 100), Number(process.argv[3] ?? 14), Number(process.argv[4] ?? 1)];
 const db = openDb();

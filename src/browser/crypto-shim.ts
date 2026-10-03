@@ -1,4 +1,4 @@
-// Stand-in for `node:crypto` in the browser build (aliased by scripts/build-pages.ts). Only what src/game/auth.ts needs.
+// Stand-in for `node:crypto` in the browser build (aliased by scripts/build-pages.ts). Only what src/game/character/auth.ts needs.
 // scrypt uses node's default parameters (N=16384, r=8, p=1), so password hashes are identical to the ones node:crypto makes.
 import { scrypt } from '@noble/hashes/scrypt.js';
 import { sha256 } from '@noble/hashes/sha2.js';
@@ -25,8 +25,13 @@ export function createHash(algo: string) {
   if (algo !== 'sha256') throw new Error('only sha256 is available in the browser build');
   let data = '';
   const api = {
-    update(text: string) { data += text; return api; },
-    digest(_enc: 'hex') { return Array.from(sha256(new TextEncoder().encode(data)), (b) => b.toString(16).padStart(2, '0')).join(''); },
+    update(text: string) {
+      data += text;
+      return api;
+    },
+    digest(_enc: 'hex') {
+      return Array.from(sha256(new TextEncoder().encode(data)), (b) => b.toString(16).padStart(2, '0')).join('');
+    },
   };
   return api;
 }

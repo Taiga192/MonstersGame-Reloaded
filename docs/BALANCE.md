@@ -79,11 +79,11 @@ By style with costs (active population): hunter 89 -> 103, balanced 85 -> 91, br
 Bots take 28 % fewer nodes with costs (6,559 instead of 9,105 across 100 bots). A low-time population gained about 7 % in an earlier
 measurement (before node costs; not repeated).
 * The board speeds levelling up by about a twelfth, so level 100 comes at about day 170, close to the target before the board existed.
-  XP bonuses on the board are scaled by 0.7 (`XP_SCALE` in `src/skills.ts`). If it is too fast or slow, use the XP rate or the points
+  XP bonuses on the board are scaled by 0.7 (`XP_SCALE` in `src/data/skill-board.ts`). If it is too fast or slow, use the XP rate or the points
   per level on the admin page; the notable and keystone prices are settings too.
 * **The Hunter is the strongest build for levelling** (+16 %), the Artisan (wages, prices) gives richer characters but no faster levels.
   That is intentional: an economy build trades speed for gold. If you want the Hunter closer to the others, look at the Plunder and
-  Tracking arms (`REGION_DEFS` in `src/skills.ts`).
+  Tracking arms (`REGION_DEFS` in `src/data/skill-board.ts`).
 * What a typical bot ends up with is far from every cap in `MODS`.
 
 ## Weekly quests
@@ -115,7 +115,7 @@ If they should matter more or less, change the reward scale; the number of quest
   power based game feels, but it means the +-10 level search range matters at high level (10 levels = about 10 % stats).
 * **Hunting gives gold, not XP, late in the game.** Hunt XP is flat (2 per portion) while the XP needed per level grows, so at level 90
   the dungeon gives about two thirds of a character's XP and a hunt about a quarter. If you want hunting to stay a way to level, scale
-  the XP of a portion with the level (`huntVillage.xp` in `src/config.ts`); the XP needed per level is then raised to compensate.
+  the XP of a portion with the level (`huntVillage.xp` in `src/core/config.ts`); the XP needed per level is then raised to compensate.
 * **Races are even.** Vampires won 56 % of the fights in the first seed, 51 % in the second and 46 % in the third. Nothing in the rules
   differs between the races, so that spread is simulation noise (clan wars, who levels first), not a rule.
 

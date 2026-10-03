@@ -21,4 +21,4 @@ VOLUME /data
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD node -e "fetch('http://127.0.0.1:'+process.env.PORT+'/api/catalog').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
-CMD ["node", "src/server.ts"]
+CMD ["node", "src/server/main.ts"]

@@ -1,0 +1,8 @@
+node_modules/
+dist/
+dist-online/
+backups/
+public/assets/
+docs/
+*.md
+package-lock.json

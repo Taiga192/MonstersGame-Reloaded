@@ -186,11 +186,27 @@ npm run e2e:online   # real Firefox: a server plus a frontend on another origin
 ```
 
 ### Architecture
-- `src/game/` the rules (raids, economy, clans, arena, dungeon, shrine, quests, skills, notifications ...), all taking `now` and `rng` as parameters; every action runs in one SQLite transaction.
-- `src/api.ts` the HTTP API (Hono, runs on Node, in a Web Worker, or anywhere); `src/node-app.ts` adds static files and the security layer (`src/security.ts`: CORS, rate limits, headers).
-- `src/db-core.ts` schema, migrations and transactions on a small database interface with two adapters: `node:sqlite` (`src/db.ts`) and WebAssembly (`src/browser/`).
-- `src/config.ts` default numbers and catalogs; `src/settings.ts` the live-tunable subset; `src/skills.ts` and `src/quests.ts` the board and the quest pool.
-- `src/bots/` the automatic players. `public/` the frontend (vanilla JavaScript, no build step); `test/` the tests, including the UI driven in jsdom against the real API.
+```
+src/
+  core/      config (default numbers, catalogs), settings (the live-tunable subset), errors, seeded rng
+  data/      static content: skill board generator, weekly quest pool, dungeon data
+  db/        schema, migrations and transactions on a small database interface; adapter for node:sqlite
+  game/      the rules, all taking `now` and `rng`; every action runs in one SQLite transaction
+    character/  players, auth, skills, modifiers, accomplishments, counters
+    combat/     raids, wars, arena
+    world/      economy, hunting and work, dungeon, shrine, temple (market), quests, blood
+    social/     clans, forum, mail, notifications, alerts, highscores
+    admin/      the admin actions and the audit log
+  api/       the HTTP API (Hono; runs on Node, in a Web Worker or anywhere)
+    routes/     one file per feature area; context.ts holds the shared helpers (auth, transactions, body firewall)
+  server/    Node entry point: static files, security layer (CORS, rate limits, headers), backups
+  browser/   the browser-only build: SQLite-WebAssembly adapter and the engine worker
+  bots/      the automatic players: brain.ts runs a session, behavior/ holds what bots do per feature
+  tools/     art import
+public/      the frontend: vanilla ES modules (js/, js/pages/), no build step
+scripts/     balance simulations, admin CLI, build and end-to-end scripts
+test/        game/ bots/ api/ ui/ tools/ (UI tests run in jsdom against the real API), support/ helpers
+```
 
 ### Balance tools
 Balance is measured, not guessed. `node scripts/progress.ts 150 100 1 30` runs 100 bots for 150 virtual days on a throwaway database and prints level curves by day and by playing style (about six minutes); `SIM_SET="rateXp=2"` tries a setting, `SIM_TEMPO=6` simulates players who log in less often. `scripts/balance.ts` prints combat win rates, `scripts/dungeon-calibrate.ts` dungeon depth by strength. Results and targets: [docs/BALANCE.md](docs/BALANCE.md).
