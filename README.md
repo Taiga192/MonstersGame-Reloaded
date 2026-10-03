@@ -210,3 +210,13 @@ The game works without images (text and emoji fallbacks) and shows any image the
 | [docs/SERVER-HARDENING.md](docs/SERVER-HARDENING.md) | Step-by-step secure Linux vServer setup |
 | [docs/SECURITY.md](docs/SECURITY.md) | Threat model, protections with their tests, residual risks |
 | [docs/ASSETS.md](docs/ASSETS.md) | Art bible, filenames, prompts |
+
+---
+
+## License
+
+Released under the [MonstersGame-Reloaded Source-Available License](LICENSE) (based on the MIT License). Copyright (c) 2026 Taiga192.
+
+In short: you may read, use, modify and share the code **for non-commercial purposes**, and you must **credit the project** ("Based on MonstersGame-Reloaded by Taiga192", with a link) in a visible place on every site or app that offers it to other people. **Monetization is not allowed** (no sales, paid access or items, advertising or donations). This makes it source-available, not open source in the sense of the OSI definition. The license text is binding; this summary is not.
+
+It covers the code and documentation of this repository. It does not grant any rights to the name, artwork or other assets of the original *MonstersGame*, with which this project is not affiliated. Dependencies keep their own licenses.

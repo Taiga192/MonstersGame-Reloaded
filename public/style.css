@@ -108,3 +108,7 @@ code { background: #0e0a0e; padding: 0 .3rem; border-radius: 4px; }
 .quest { display: flex; flex-direction: column; gap: .35rem; }
 .quest.done { border-color: var(--good); } .quest.claimed { opacity: .65; } .quest.locked { opacity: .7; }
 .pill.easy { color: var(--good); } .pill.normal { color: var(--gold); } .pill.hard { color: var(--bad); }
+
+/* the credit required by the license: visible, small, on every page */
+#credit { text-align: center; color: var(--muted); font-size: .8rem; padding: 0 1rem 4rem; }
+#credit a { color: var(--muted); text-decoration: underline; }

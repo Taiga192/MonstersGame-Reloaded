@@ -1,0 +1,78 @@
+MonstersGame-Reloaded Source-Available License, version 1.0
+
+Copyright (c) 2026 Taiga192
+
+This license is based on the MIT License, with two added conditions
+(attribution and no monetization). Because of the second condition it is NOT
+the MIT License and NOT an open-source license in the sense of the Open Source
+Initiative: the source code is available to read, use and modify, but only
+for non-commercial purposes.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to use,
+copy, modify, merge, publish and distribute the Software, and to permit
+persons to whom the Software is furnished to do so, subject to the following
+conditions:
+
+1. Attribution
+
+   a) The copyright notice above and this license text must be included in
+      all copies or substantial portions of the Software.
+
+   b) If the Software, or a work based on it, is made available to other
+      people to use (for example as a website, a game server, a hosted
+      frontend or an application), the following credit must be shown to its
+      users in a clearly visible place that can be reached from the start page
+      (for example in the footer or on an "About" page), and it must not be
+      removed, hidden or made unreadable:
+
+          Based on MonstersGame-Reloaded by Taiga192
+          https://github.com/Taiga192/MonstersGame-Reloaded
+
+      A modified version must additionally state that it has been modified.
+
+2. No monetization
+
+   The Software, and any work based on it, must not be used for commercial
+   purposes or to make money in any way. This includes, without limitation:
+
+   - selling, licensing, renting or sublicensing the Software or access to it;
+   - charging for accounts, subscriptions, features, items, in-game currency,
+     advantages or services in a game, website or application that uses it;
+   - showing advertisements, paid sponsorships or paid placements;
+   - collecting donations, tips or any other payments in connection with it;
+   - offering it as part of a paid product or service.
+
+   Non-commercial use is permitted, for example: personal use, learning,
+   research, and running a free, ad-free game for a community.
+
+3. Third-party components
+
+   Third-party software that this project depends on keeps its own license.
+   This license applies only to the code and documentation written for
+   MonstersGame-Reloaded.
+
+4. Names and assets
+
+   No rights are granted to the name, artwork or other assets of the original
+   game "MonstersGame", with which this project is not affiliated, nor to
+   artwork that is not part of this repository.
+
+5. Other licenses
+
+   The copyright holder may grant additional permissions, including
+   commercial licenses, separately and in writing. Nothing in this license
+   limits that.
+
+6. Termination
+
+   If you violate these conditions, your rights under this license end
+   automatically.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
